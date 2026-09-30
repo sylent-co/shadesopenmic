@@ -637,4 +637,145 @@ export class Synth {
     s.start(t);
     return g;
   }
+
+  // ---- nature & foley (v2) ------------------------------------------------------
+  /** Tanpura drone on Sa (D): Pa–Sa–Sa–low Sa, with a buzzing jawari bridge. */
+  tanpura(t0, t1, v = 1, { cycle = 1.6, pan = 0 } = {}) {
+    const c = this.ctx;
+    const bus = c.createGain(); bus.gain.value = v;
+    const buzz = c.createBiquadFilter(); buzz.type = 'peaking'; buzz.frequency.value = 2400; buzz.Q.value = 1.2; buzz.gain.value = 7;
+    const sh = this.shaper(1.5);
+    const out = this.pan(bus.connect(sh).connect(buzz), pan);
+    out.connect(this.airy);
+    this.send(out, { hall: 0.45 });
+    const notes = [45, 50, 50, 38];
+    for (let t = t0, k = 0; t < t1; t += cycle / 4, k++) {
+      const s = c.createBufferSource();
+      s.buffer = this.ksBuffer(notes[k % 4], 3.0, 0.32);
+      const g = c.createGain(); g.gain.value = 0.28 * (k % 4 === 3 ? 1.2 : 1);
+      s.connect(g).connect(bus);
+      s.start(t);
+    }
+  }
+
+  thunder(t, v = 1, { dur = 3.2, crack = 1 } = {}) {
+    const c = this.ctx;
+    if (crack > 0) {
+      const n = this.noiseSrc(t, 0.4);
+      const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 500;
+      const g = c.createGain(); this.env(g, t, { a: 0.002, peak: v * 0.55 * crack, d: 0.35 });
+      n.connect(hp).connect(g).connect(this.fx);
+      this.send(g, { hall: 0.5 });
+    }
+    const r = this.noiseSrc(t, dur + 0.2, true);
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.8;
+    lp.frequency.setValueAtTime(700, t); lp.frequency.exponentialRampToValueAtTime(110, t + dur);
+    const g = c.createGain();
+    const curve = new Float32Array(48);
+    for (let i = 0; i < 48; i++) { const u = i / 47; curve[i] = v * 1.3 * Math.min(1, u * 12) * Math.exp(-u * 3.2) * (0.6 + 0.4 * Math.abs(Math.sin(u * 23 + i))); }
+    g.gain.setValueCurveAtTime(curve, t, dur);
+    r.connect(lp).connect(this.shaper(1.4)).connect(g).connect(this.fx);
+    this.send(g, { hall: 0.3 });
+    this.boom(t + 0.02, v * 0.5, { f0: 48, f1: 26, dur: dur * 0.6, hall: 0.2 });
+  }
+
+  rainBed(t0, t1, v = 1, { fadeIn = 0.2, fadeOut = 0.05 } = {}) {
+    const c = this.ctx, dur = t1 - t0;
+    const n = this.noiseSrc(t0, dur + 0.1, true);
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 0.5;
+    const n2 = this.noiseSrc(t0, dur + 0.1);
+    const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 6000;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(v, t0 + fadeIn);
+    g.gain.setValueAtTime(v, t1 - fadeOut); g.gain.linearRampToValueAtTime(0, t1);
+    const g2 = c.createGain(); g2.gain.value = 0.35;
+    n.connect(bp).connect(g); n2.connect(hp).connect(g2).connect(g);
+    g.connect(this.amb);
+    this.send(g, { hall: 0.25 });
+    // individual drops ticking on leaves and water
+    const r = mulberry32(99);
+    for (let t = t0 + 0.05; t < t1 - 0.05; t += 0.012 + r() * 0.03) {
+      const f = 1800 + r() * 5000;
+      this.click(t, v * (0.08 + r() * 0.12), { f, pan: r() * 1.6 - 0.8, out: this.amb, room: 0.05 });
+    }
+  }
+
+  crickets(t0, t1, v = 1) {
+    const c = this.ctx;
+    const r = mulberry32(314);
+    for (let k = 0; k < 3; k++) {
+      const o = c.createOscillator(); o.frequency.value = 4200 + k * 330 + r() * 100;
+      const g = c.createGain(); g.gain.value = 0;
+      const pn = c.createStereoPanner(); pn.pan.value = [-0.6, 0.5, 0.1][k];
+      o.connect(g).connect(pn).connect(this.amb);
+      this.send(pn, { hall: 0.3 });
+      let t = t0 + r() * 0.3;
+      while (t < t1 - 0.2) {
+        for (let p = 0; p < 4; p++) {
+          const tp = t + p * 0.038;
+          g.gain.setValueAtTime(0, tp); g.gain.linearRampToValueAtTime(v * 0.028, tp + 0.006); g.gain.linearRampToValueAtTime(0, tp + 0.024);
+        }
+        t += 0.42 + r() * 0.25;
+      }
+      o.start(t0); o.stop(t1);
+    }
+  }
+
+  /** Asian koel: a short "ku" then a long rising "OO". */
+  koel(t, v = 1, { pitch = 1, pan = 0.35 } = {}) {
+    const c = this.ctx;
+    const out = c.createGain(); out.gain.value = v;
+    const pn = this.pan(out, pan); pn.connect(this.amb); this.send(pn, { hall: 0.6 });
+    const note = (t0, d, f0, f1) => {
+      const o = c.createOscillator(); o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + d * 0.85);
+      const vib = c.createOscillator(); vib.frequency.value = 7; const vg = c.createGain(); vg.gain.value = f0 * 0.012;
+      vib.connect(vg).connect(o.frequency);
+      const h = c.createOscillator(); h.frequency.setValueAtTime(f0 * 2, t0); h.frequency.exponentialRampToValueAtTime(f1 * 2, t0 + d * 0.85);
+      const g = c.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.09, t0 + 0.03); g.gain.setValueAtTime(0.09, t0 + d - 0.06); g.gain.linearRampToValueAtTime(0, t0 + d);
+      const hg = c.createGain(); hg.gain.value = 0.12;
+      o.connect(g); h.connect(hg).connect(g); g.connect(out);
+      [o, vib, h].forEach((x) => { x.start(t0); x.stop(t0 + d + 0.05); });
+    };
+    note(t, 0.13, 690 * pitch, 720 * pitch);
+    note(t + 0.2, 0.38, 760 * pitch, 1120 * pitch);
+  }
+
+  knock(t, v = 1) {
+    const c = this.ctx;
+    const o = c.createOscillator(); o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(90, t + 0.07);
+    const g = c.createGain(); this.env(g, t, { a: 0.001, peak: v * 0.7, d: 0.09 });
+    o.connect(g).connect(this.fx); o.start(t); o.stop(t + 0.2);
+    const n = this.noiseSrc(t, 0.06, true);
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 520; bp.Q.value = 1.4;
+    const ng = c.createGain(); this.env(ng, t, { a: 0.001, peak: v * 0.9, d: 0.04 });
+    n.connect(bp).connect(ng).connect(this.fx);
+    this.send(g, { room: 0.6 }); this.send(ng, { room: 0.6 });
+  }
+
+  /** Hummed "ooh" through two vowel formants (the shower singer). */
+  ooh(t, midi, dur, v = 1, { hall = 0.7, pan = 0 } = {}) {
+    const c = this.ctx;
+    const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mtof(midi);
+    const vib = c.createOscillator(); vib.frequency.value = 5.3; const vg = c.createGain(); vg.gain.value = 14;
+    vib.connect(vg).connect(o.detune);
+    const f1 = c.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 360; f1.Q.value = 5;
+    const f2 = c.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 820; f2.Q.value = 7;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * 0.5, t + 0.06); g.gain.setValueAtTime(v * 0.5, t + dur - 0.06); g.gain.linearRampToValueAtTime(0, t + dur);
+    const g2 = c.createGain(); g2.gain.value = 0.5;
+    o.connect(f1).connect(g); o.connect(f2).connect(g2).connect(g);
+    const pn = this.pan(g, pan); pn.connect(this.airy); this.send(pn, { hall });
+    [o, vib].forEach((x) => { x.start(t); x.stop(t + dur + 0.05); });
+  }
+
+  squeak(t, v = 1) {
+    const c = this.ctx;
+    const o = c.createOscillator(); o.type = 'triangle';
+    o.frequency.setValueAtTime(1500, t); o.frequency.exponentialRampToValueAtTime(2500, t + 0.09);
+    const am = c.createOscillator(); am.frequency.value = 85; const amg = c.createGain(); amg.gain.value = 0.5;
+    const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * 0.05, t + 0.01); g.gain.linearRampToValueAtTime(0, t + 0.1);
+    am.connect(amg).connect(g.gain);
+    o.connect(g).connect(this.fx); this.send(g, { room: 0.4 });
+    [o, am].forEach((x) => { x.start(t); x.stop(t + 0.12); });
+  }
 }

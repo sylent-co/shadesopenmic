@@ -1,792 +1,703 @@
-// Act 2 (5.5 – 12.0 s): fast kinetic typography at 120 BPM.
-// Five relatable lines, each with its own colour scheme, motion signature and
-// hand-off transition, then the "GIVE IT A MIC." climax whose red full stop
-// becomes the SHADES disc.
+// Act 2 (12 – 26.4 s): the things people keep to themselves, one bar each at
+// 100 BPM. Every line lives in its own little world — a notes app, a fogged
+// shower door, a building going dark at 2 AM, a hostel group chat, a record
+// the neighbours can't escape — then "GIVE IT A MIC."
 
-import { T, COPY, C, BEAT, EVENT } from '../config.js';
-import { clamp, lerp, seg, ease, hash1, mulberry32, TAU, smoothstep, spring, rgba } from '../core/math.js';
+import { T, COPY, C } from '../config.js';
+import { clamp, lerp, seg, ease, hash1, mulberry32, TAU, smoothstep, spring, rgba, noise1 } from '../core/math.js';
 import { font } from '../core/fonts.js';
-import { layout, metrics, textWidth } from './text.js';
-import { brandDiscCanvas } from './logo.js';
-import { glowDot } from './intro.js';
+import { layout, textWidth } from './text.js';
+import { glowDot } from './fx.js';
+import {
+  IDENT, setView, zoomM, beatEnv, riseTail, drawThat, drawHUD, STARS, sevenSeg, vinylCanvas, sceneClimax, keyLayout,
+} from './kit.js';
 
-const SCHEME = [
-  { bg: C.red, fg: C.cream, sub: C.cream, accent: C.ink, hud: C.cream },
-  { bg: C.cream, fg: C.ink, sub: C.ink, accent: C.red, hud: C.ink },
-  { bg: C.night, fg: C.cream, sub: '#E9E2F2', accent: '#FF4127', hud: C.cream },
-  { bg: C.ink, fg: C.cream, sub: C.cream, accent: C.red, hud: C.cream },
-  { bg: C.red, fg: C.cream, sub: C.cream, accent: C.ink, hud: C.cream },
-];
+const LINE = 2.4;
+const lineAt = (t) => clamp(Math.floor((t - T.drop) / LINE), 0, 4);
+const portraitOf = (K) => K.H > K.W;
 
-const IDENT = [1, 0, 0, 1, 0, 0];
-function setView(K, m) {
-  K.L.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
-  K.G.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
-  K.S.setTransform(m[0] * 0.5, m[1] * 0.5, m[2] * 0.5, m[3] * 0.5, m[4] * 0.5, m[5] * 0.5);
+// ---- shared -----------------------------------------------------------------
+
+/** Key word letters with a per-letter transform callback. */
+function drawKey(ctx, lay, word, color, fn) {
+  const f = font('mona', lay.size, 900, lay.wdth);
+  const lw = layout(ctx, word, f);
+  for (const ch of lw.chars) {
+    const st = fn(ch);
+    if (!st || st.a <= 0) continue;
+    ctx.save();
+    const cx = lay.x0 + ch.x + ch.w / 2, cy = lay.baseline - lay.capPx / 2;
+    ctx.translate(cx + (st.dx || 0), cy + (st.dy || 0));
+    if (st.rot) ctx.rotate(st.rot);
+    if (st.s !== undefined && st.s !== 1) ctx.scale(st.s, st.s);
+    ctx.globalAlpha = Math.min(1, st.a);
+    ctx.font = st.font || f;
+    ctx.fillStyle = st.color || color;
+    ctx.fillText(ch.ch, -ch.w / 2, lay.capPx / 2);
+    ctx.restore();
+  }
+  return lw;
 }
-/** Matrix scaling by s about P while moving P to Q. */
-const zoomM = (P, Q, s) => [s, 0, 0, s, Q[0] - s * P[0], Q[1] - s * P[1]];
 
-const beatEnv = (t, decay = 9) => {
-  const b = (t - T.drop) / BEAT;
-  if (b < 0) return 0;
-  return Math.exp(-(b - Math.floor(b)) * BEAT * decay);
+function textBlock(K, lay, lt, tail, colors, { that = 0.06, tailT = 0.42 } = {}) {
+  drawThat(K, lay, lt, that, colors.sub);
+  riseTail(K, tail, lay, lt, tailT, 0.05, colors, lay.alignRight);
+}
+
+// ---- 01 POEM — the notes app ---------------------------------------------------
+
+const NOTE = {
+  title: 'poem (don’t open)',
+  date: '14 August 2023 at 2:47 AM',
+  struck: 'i’m not really a poet',
+  lines: ['the ceiling fan', 'has heard every verse', 'i never said out loud.'],
 };
 
-// ---------------------------------------------------------------------------
-// layout
-
-const fitCache = new Map();
-/** Size & width-axis value so `word` has cap height capPx and fills targetW. */
-function fitKey(ctx, word, targetW, capPx, wght = 900) {
-  const key = `${word}|${Math.round(targetW)}|${Math.round(capPx)}|${wght}`;
-  if (fitCache.has(key)) return fitCache.get(key);
-  const cap = metrics(ctx, 'mona', wght, 100).cap;
-  let size = capPx / cap;
-  const wAt = (wd) => textWidth(ctx, word, font('mona', size, wght, wd));
-  let wdth;
-  if (wAt(125) <= targetW) wdth = 125;
-  else if (wAt(75) >= targetW) { wdth = 75; size *= targetW / wAt(75); }
-  else {
-    let lo = 75, hi = 125;
-    for (let i = 0; i < 9; i++) { const mid = (lo + hi) / 2; if (wAt(mid) > targetW) hi = mid; else lo = mid; }
-    wdth = lo;
-  }
-  const r = { size, wdth, width: wAt(wdth), capPx: cap * size };
-  fitCache.set(key, r);
-  return r;
+function phoneGeom(K) {
+  const { W, H } = K;
+  if (portraitOf(K)) { const h = 0.5 * H; return { cx: 0.5 * W, cy: 0.71 * H, h, w: h * 0.47, rot: -0.05 }; }
+  const h = 0.84 * H;
+  return { cx: 0.765 * W, cy: 0.53 * H, h, w: h * 0.47, rot: -0.07 };
 }
 
-function blockLayout(K, word, opt = {}) {
-  const { L, W, H } = K;
-  const portrait = H > W;
-  const U = portrait ? W * 0.9 : H;
-  const fit = fitKey(L, word, portrait ? 0.84 * W : (opt.targetW || 0.64) * W, portrait ? 0.16 * H : 0.33 * H);
-  const x0 = opt.left !== undefined && !portrait ? opt.left * W : (W - fit.width) / 2;
-  const baseline = H * 0.5 + fit.capPx / 2 + 0.015 * H;
-  const thatSize = 0.105 * U;
-  const tailSize = 0.066 * U;
-  return {
-    ...fit, x0, baseline, top: baseline - fit.capPx,
-    thatSize, tailSize,
-    thatBase: baseline - fit.capPx - 0.035 * U, thatX: x0 + 0.004 * W,
-    tailBase: baseline + 0.11 * U,
+function drawPhone(K, P, lt, t) {
+  const { L, S } = K;
+  const pe = ease.outBack(clamp((lt - 0.06) / 0.5), 1.15);
+  if (pe <= 0) return;
+  const { w, h } = P;
+  const float = Math.sin(t * 1.7) * 0.006 * h;
+  const tr = (ctx, k = 1) => {
+    ctx.translate(P.cx * k, (P.cy + (1 - pe) * 1.0 * h + float) * k);
+    ctx.rotate(P.rot + (1 - pe) * 0.28);
+    ctx.scale(k, k);
   };
-}
-
-/** Split a tail string into tokens; *word* marks an accent, final '.' is accent. */
-function tailTokens(text) {
-  const out = [];
-  const re = /\*([^*]+)\*|([^\s*.]+)|(\.)|(\s+)/g;
-  let m;
-  while ((m = re.exec(text))) {
-    if (m[1]) out.push({ text: m[1], accent: true });
-    else if (m[2]) out.push({ text: m[2], accent: false });
-    else if (m[3]) out.push({ text: '.', accent: true, dot: true });
-    else out.push({ text: ' ', space: true });
-  }
-  return out;
-}
-
-/** Words rise from behind a mask, staggered (x: left, or right edge if alignRight). */
-function riseTail(K, text, lay, lt, t0, stagger, colors, alignRight = true) {
-  const { L } = K;
-  const f = font('serifIt', lay.tailSize);
-  const toks = tailTokens(text);
-  const full = toks.map((k) => k.text).join('');
-  const total = textWidth(L, full, f);
-  const x0 = alignRight ? lay.x0 + lay.width - total : lay.x0;
-  let prefix = '';
-  let wi = 0;
-  const clipH = lay.tailSize * 1.25;
-  for (const tk of toks) {
-    const x = x0 + textWidth(L, prefix, f);
-    prefix += tk.text;
-    if (tk.space) continue;
-    const p = ease.snap(clamp((lt - t0 - wi * stagger) / 0.22));
-    wi++;
-    if (p <= 0) continue;
-    L.save();
-    L.beginPath();
-    L.rect(x - lay.tailSize * 0.3, lay.tailBase - clipH, textWidth(L, tk.text, f) + lay.tailSize * 0.6, clipH * 1.35);
-    L.clip();
-    L.font = f;
-    L.fillStyle = tk.accent ? colors.accent : colors.sub;
-    L.fillText(tk.text, x, lay.tailBase + (1 - p) * clipH);
-    L.restore();
-  }
-  return { x0, total };
-}
-
-function drawThat(K, lay, lt, t0, color, mode = 'slide') {
-  const { L } = K;
-  const p = ease.snap(clamp((lt - t0) / 0.2));
-  if (p <= 0) return;
-  const f = font('serifIt', lay.thatSize);
-  const w = textWidth(L, 'that', f);
+  // soft contact shadow
+  S.save(); tr(S, 1); S.globalAlpha = 0.45; S.fillStyle = '#3A0500';
+  S.beginPath(); S.roundRect(-w / 2 + 0.05 * w, -h / 2 + 0.06 * h, w, h, w * 0.14); S.fill(); S.restore();
   L.save();
-  L.beginPath();
-  L.rect(lay.thatX - lay.thatSize * 0.3, lay.thatBase - lay.thatSize * 1.1, w + lay.thatSize * 0.6, lay.thatSize * 1.45);
-  L.clip();
-  L.font = f;
-  L.fillStyle = color;
-  L.fillText('that', lay.thatX - (1 - p) * (w + lay.thatSize * 0.5), lay.thatBase);
-  L.restore();
-}
-
-// ---------------------------------------------------------------------------
-// HUD: small editorial labels that carry event info through the fast section
-
-function drawHUD(K, t, idx, color, alpha = 1) {
-  const { L, W, H } = K;
-  const on = seg(t, T.drop + 0.04, T.drop + 0.3, ease.outCubic) * (1 - seg(t, T.endHit - 0.3, T.endHit - 0.12));
-  if (on <= 0) return;
-  const size = 0.0195 * Math.min(H, W * 0.9);
-  const m = 0.052 * Math.min(H, W);
-  L.save();
-  L.font = font('mono', size, 560);
-  L.letterSpacing = `${(size * 0.16).toFixed(1)}px`;
-  L.fillStyle = color;
-  L.globalAlpha = on * 0.82 * alpha;
-  const typed = (s, k) => s.slice(0, Math.round(s.length * clamp(k)));
-  const k = seg(t, T.drop + 0.04, T.drop + 0.4);
-  L.textBaseline = 'top';
-  L.textAlign = 'left';
-  L.fillText(typed(`${EVENT.host} — ${EVENT.title}`, k), m, m);
-  L.textAlign = 'right';
-  L.fillText(typed(`${EVENT.day} ${EVENT.dateShort}`, k), W - m, m);
+  tr(L);
+  L.fillStyle = '#0E0E10';
+  L.beginPath(); L.roundRect(-w / 2, -h / 2, w, h, w * 0.15); L.fill();
+  L.strokeStyle = 'rgba(255,255,255,0.14)'; L.lineWidth = Math.max(1, w * 0.006); L.stroke();
+  const m = w * 0.035, sw = w - 2 * m, sh = h - 2 * m;
+  L.translate(-w / 2 + m, -h / 2 + m);
+  L.beginPath(); L.roundRect(0, 0, sw, sh, w * 0.12); L.clip();
+  L.fillStyle = '#FBF7EE'; L.fillRect(0, 0, sw, sh);
+  const fs = (k) => sw * k;
+  // status bar + island
+  L.fillStyle = '#111'; L.beginPath(); L.roundRect(sw * 0.34, sh * 0.018, sw * 0.32, sh * 0.034, sh * 0.017); L.fill();
+  L.font = font('mona', fs(0.045), 650); L.textBaseline = 'middle';
+  L.fillText('2:47', sw * 0.1, sh * 0.036);
+  L.fillRect(sw * 0.8, sh * 0.03, sw * 0.08, sh * 0.013);
+  // nav
+  L.fillStyle = '#D69A12'; L.font = font('mona', fs(0.05), 560);
+  L.fillText('‹ Notes', sw * 0.05, sh * 0.095);
+  L.textAlign = 'right'; L.fillText('Done', sw * 0.95, sh * 0.095); L.textAlign = 'left';
+  L.fillStyle = '#9A958C'; L.font = font('mona', fs(0.034), 480); L.textAlign = 'center';
+  L.fillText(NOTE.date, sw / 2, sh * 0.15); L.textAlign = 'left';
   L.textBaseline = 'alphabetic';
-  L.fillText(typed(`${EVENT.venue.toUpperCase()} · ${EVENT.city.toUpperCase()}`, k), W - m, H - m);
-  L.textAlign = 'left';
-  const labels = COPY.lines.map((l, i) => `0${i + 1}/05  ${l.label.toUpperCase()}`);
-  const lab = idx < 5 ? labels[idx] : '05/05  ALL OF YOU';
-  const roll = idx < 5 ? seg(t, T.lines[idx], T.lines[idx] + 0.12, ease.outCubic) : 1;
-  L.save();
-  L.beginPath();
-  L.rect(m - 4, H - m - size * 1.2, W * 0.5, size * 1.5);
-  L.clip();
-  L.fillText(lab, m, H - m + (1 - roll) * size * 1.4);
-  if (roll < 1 && idx > 0) L.fillText(labels[idx - 1], m, H - m - roll * size * 1.4);
-  L.restore();
-  // progress hairline
-  const prog = clamp((t - T.drop) / (T.endHit - T.drop));
-  L.globalAlpha = on * 0.35 * alpha;
-  L.fillRect(m, H - m * 0.62, (W - 2 * m) * prog, Math.max(1, size * 0.08));
+  const px = sw * 0.08;
+  L.fillStyle = '#17130E'; L.font = font('mona', fs(0.074), 800);
+  L.fillText(NOTE.title, px, sh * 0.235);
+  // the self-doubt line, struck through
+  const fb = font('mona', fs(0.058), 440);
+  L.font = fb; L.fillStyle = '#6E685F';
+  const y0 = sh * 0.315;
+  L.fillText(NOTE.struck, px, y0);
+  const sk = ease.inOutCubic(clamp((lt - 0.38) / 0.3));
+  if (sk > 0) { L.fillStyle = '#C8250E'; L.fillRect(px - sw * 0.01, y0 - fs(0.058) * 0.3, (textWidth(L, NOTE.struck, fb) + sw * 0.02) * sk, Math.max(1.5, fs(0.006))); }
+  // typed poem
+  L.fillStyle = '#17130E';
+  const total = NOTE.lines.join('').length;
+  let n = Math.floor(total * clamp((lt - 0.62) / 1.05));
+  let caret = null;
+  NOTE.lines.forEach((ln, i) => {
+    const y = y0 + sh * (0.078 + i * 0.068);
+    const shown = ln.slice(0, Math.max(0, n));
+    n -= ln.length;
+    if (shown.length) L.fillText(shown, px, y);
+    if (!caret && (n < 0 || i === NOTE.lines.length - 1)) caret = [px + textWidth(L, shown, fb), y];
+  });
+  if (caret && Math.floor(t * 3.4) % 2 === 0) { L.fillStyle = '#D69A12'; L.fillRect(caret[0] + sw * 0.006, caret[1] - fs(0.058) * 0.82, Math.max(1.5, sw * 0.008), fs(0.058) * 1.02); }
+  // toolbar
+  L.fillStyle = '#D69A12';
+  for (let i = 0; i < 4; i++) { L.beginPath(); L.arc(sw * (0.14 + i * 0.24), sh * 0.955, sw * 0.022, 0, TAU); L.fill(); }
+  // glass sheen
+  const g = L.createLinearGradient(0, 0, sw, sh);
+  g.addColorStop(0, 'rgba(255,255,255,0.10)'); g.addColorStop(0.35, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  L.fillStyle = g; L.fillRect(0, 0, sw, sh);
   L.restore();
 }
 
-// ---------------------------------------------------------------------------
-// 01 POEM — red paper, ruled lines, typed tail with a caret
+function steam(K, e) {
+  const { L, W, H } = K;
+  if (e <= 0) return;
+  const top = H * (1.15 - 1.45 * e);
+  L.save();
+  L.fillStyle = 'rgba(232,238,237,1)';
+  L.fillRect(0, top + 0.12 * H, W, H);
+  for (let i = 0; i < 14; i++) {
+    const x = (i / 13) * W, r = (0.16 + 0.06 * hash1(i)) * H;
+    const y = top + 0.12 * H + Math.sin(i * 1.7 + e * 5) * 0.03 * H;
+    const g = L.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(232,238,237,1)'); g.addColorStop(1, 'rgba(232,238,237,0)');
+    L.fillStyle = g; L.fillRect(x - r, y - r, 2 * r, 2 * r);
+  }
+  L.restore();
+}
 
 function scenePoem(K, lt, t) {
   const { L, G, W, H } = K;
-  const sc = SCHEME[0];
-  const lay0 = blockLayout(K, 'POEM');
-  const wd = lerp(125, lay0.wdth, ease.outExpo(clamp((lt - 0.02) / 0.5)));
-  const f = font('mona', lay0.size, 900, wd);
-  const lw = layout(L, 'POEM', f);
-  const x0 = (W - lw.width) / 2;
-  // iris from the sun disc
   const r0 = 0.229 * H, rMax = Math.hypot(W, H) / 2 + 10;
   const ir = lerp(r0, rMax, ease.outExpo(clamp(lt / 0.22)));
   L.save();
-  L.beginPath();
-  L.arc(W / 2, H / 2, ir, 0, TAU);
-  L.clip();
-  const g = L.createRadialGradient(W * 0.5, H * 0.62, 0, W * 0.5, H * 0.62, Math.hypot(W, H) * 0.62);
-  g.addColorStop(0, '#E4301A');
-  g.addColorStop(1, '#B51B0B');
-  L.fillStyle = g;
-  L.fillRect(0, 0, W, H);
-  // ruled notebook lines drifting upward + margin line
-  const gap = 0.074 * H;
-  const off = (lt * 0.06 * H) % gap;
-  L.fillStyle = rgba(C.cream, 0.10);
+  L.beginPath(); L.arc(W / 2, H / 2, ir, 0, TAU); L.clip();
+  const g = L.createRadialGradient(W * 0.4, H * 0.6, 0, W * 0.4, H * 0.6, Math.hypot(W, H) * 0.62);
+  g.addColorStop(0, '#E4301A'); g.addColorStop(1, '#AE190A');
+  L.fillStyle = g; L.fillRect(0, 0, W, H);
+  const gap = 0.074 * H, off = (lt * 0.05 * H) % gap;
+  L.fillStyle = rgba(C.cream, 0.09);
   for (let y = gap * 0.6 - off; y < H; y += gap) L.fillRect(0, y, W, Math.max(1, 0.0016 * H));
-  L.fillStyle = rgba(C.cream, 0.16);
-  L.fillRect(0.085 * W, 0, Math.max(1, 0.0022 * H), H);
-  // key letters rise from the baseline, staggered
-  L.font = f;
-  L.fillStyle = sc.fg;
-  for (const ch of lw.chars) {
-    const p = ease.snap(clamp((lt - 0.03 - ch.i * 0.035) / 0.26));
-    if (p <= 0) continue;
-    L.save();
-    L.beginPath();
-    L.rect(x0 + ch.x - 10, lay0.baseline - lay0.capPx * 1.25, ch.w + 20, lay0.capPx * 1.3);
-    L.clip();
-    L.fillText(ch.ch, x0 + ch.x, lay0.baseline + (1 - p) * lay0.capPx * 1.1);
-    L.restore();
-  }
-  const lay = { ...lay0, x0, width: lw.width };
-  drawThat(K, lay, lt, 0.08, sc.sub);
-  // typed tail + caret
-  const tail = COPY.lines[0].tail;
-  const ft = font('serifIt', lay.tailSize);
-  const full = textWidth(L, tail, ft);
-  const tx = lay.x0 + lay.width - full;
-  const n = Math.round(tail.length * clamp((lt - 0.26) / 0.36));
-  L.font = ft;
-  L.fillStyle = sc.sub;
-  const shown = tail.slice(0, n);
-  const body = shown.endsWith('.') ? shown.slice(0, -1) : shown;
-  L.fillText(body, tx, lay.tailBase);
-  if (shown.endsWith('.')) { L.fillStyle = sc.accent; L.fillText('.', tx + textWidth(L, body, ft), lay.tailBase); }
-  if (lt > 0.24) {
-    const cxp = tx + textWidth(L, shown, ft) + lay.tailSize * 0.08;
-    const blink = n < tail.length || Math.floor((lt - 0.62) / 0.12) % 2 === 0;
-    if (blink) { L.fillStyle = sc.sub; L.fillRect(cxp, lay.tailBase - lay.tailSize * 0.78, Math.max(2, lay.tailSize * 0.06), lay.tailSize * 0.95); }
-  }
+  L.fillStyle = rgba(C.cream, 0.15);
+  L.fillRect(0.05 * W, 0, Math.max(1, 0.0022 * H), H);
   L.restore();
-  // shock ring at the iris edge
-  if (lt < 0.3) {
-    G.save();
-    G.globalAlpha = (1 - lt / 0.3) * 0.9;
-    G.strokeStyle = '#FFD2B8';
-    G.lineWidth = (1 - lt / 0.3) * 0.02 * H + 1;
-    G.beginPath(); G.arc(W / 2, H / 2, ir, 0, TAU); G.stroke();
-    G.restore();
+  if (ir > r0 + 2) drawPhone(K, phoneGeom(K), lt, t);
+  // key: typed in, with a big caret
+  const lay = keyLayout(K, 'POEM', 'left', { cy: 0.47 });
+  const typeT = (i) => 0.1 + i * 0.075;
+  const lw = drawKey(L, lay, 'POEM', C.cream, (ch) => {
+    const a = lt - typeT(ch.i);
+    if (a < 0) return null;
+    return { a: 1, s: lerp(1.22, 1, ease.outBack(clamp(a / 0.2), 2.2)) };
+  });
+  const shown = lw.chars.filter((c) => lt >= typeT(c.i));
+  if (lt > 0.08 && lt < 1.0 && Math.floor(lt * 6) % 2 === 0) {
+    const last = shown[shown.length - 1];
+    const cx = lay.x0 + (last ? last.x + last.w : 0) + lay.capPx * 0.06;
+    L.fillStyle = C.cream;
+    L.fillRect(cx, lay.top - lay.capPx * 0.06, Math.max(3, lay.capPx * 0.06), lay.capPx * 1.12);
   }
-  // zoom target for the exit: inside the left stroke of the O
-  const o = lw.chars[1];
-  return { zoomP: [x0 + o.x + o.w * 0.15, lay0.baseline - lay0.capPx * 0.5] };
+  textBlock(K, lay, lt, COPY.lines[0].tail, { sub: C.cream, accent: C.ink }, { tailT: 0.45 });
+  // iris shock ring
+  if (lt < 0.3) {
+    G.save(); G.globalAlpha = (1 - lt / 0.3) * 0.9; G.strokeStyle = '#FFD2B8';
+    G.lineWidth = (1 - lt / 0.3) * 0.02 * H + 1; G.beginPath(); G.arc(W / 2, H / 2, ir, 0, TAU); G.stroke(); G.restore();
+  }
+  steam(K, ease.inCubic(seg(lt, 2.06, 2.4)));
 }
 
-// 02 SONG — cream, red vocal waveform, letters drop and pulse like an EQ
+// ---- 02 SONG — written in the steam on a shower door ----------------------------
 
-const DROPS = Array.from({ length: 34 }, (_, i) => { const r = mulberry32(333 + i); return { x: r(), p: r(), len: 0.05 + r() * 0.08, sp: 1.2 + r() * 0.8 }; });
+let fogCanvas = null, fogNoise = null;
+function fogBuffers(W, H) {
+  if (!fogCanvas || fogCanvas.width !== W || fogCanvas.height !== H) {
+    fogCanvas = document.createElement('canvas');
+    fogCanvas.width = W; fogCanvas.height = H;
+  }
+  if (!fogNoise) {
+    fogNoise = document.createElement('canvas');
+    fogNoise.width = fogNoise.height = 256;
+    const x = fogNoise.getContext('2d');
+    const img = x.createImageData(256, 256);
+    const r = mulberry32(55);
+    for (let i = 0; i < img.data.length; i += 4) { const v = 180 + r() * 75; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
+    x.putImageData(img, 0, 0);
+  }
+  return fogCanvas.getContext('2d');
+}
+const CONDENSATION = Array.from({ length: 420 }, (_, i) => { const r = mulberry32(1200 + i); return [r(), r(), Math.pow(r(), 3)]; });
+const DRIPS = Array.from({ length: 9 }, (_, i) => { const r = mulberry32(1500 + i); return { ch: i % 4, fx: 0.2 + r() * 0.6, t0: 0.5 + r() * 0.9, len: 0.08 + r() * 0.22 }; });
 
 function sceneSong(K, lt, t) {
-  const { L, G, W, H } = K;
-  const sc = SCHEME[1];
-  L.fillStyle = C.cream;
-  L.fillRect(0, 0, W, H);
-  const vg = L.createRadialGradient(W / 2, H / 2, H * 0.2, W / 2, H / 2, Math.hypot(W, H) * 0.6);
-  vg.addColorStop(0, 'rgba(255,255,255,0)');
-  vg.addColorStop(1, 'rgba(120,80,40,0.10)');
-  L.fillStyle = vg;
-  L.fillRect(0, 0, W, H);
-  // shower streaks
-  L.strokeStyle = 'rgba(120,140,165,0.28)';
-  L.lineWidth = Math.max(1, 0.0022 * H);
-  for (const d of DROPS) {
-    const y = (((d.p + lt * d.sp) % 1.2) - 0.1) * H;
-    L.beginPath(); L.moveTo(d.x * W, y); L.lineTo(d.x * W - 0.004 * H, y + d.len * H); L.stroke();
+  const { L, S, G, W, H } = K;
+  // tiles behind the glass (blurred by the soft layer)
+  const ts = 0.105 * H;
+  S.save();
+  S.fillStyle = '#A9D2CC'; S.fillRect(0, 0, W, H);
+  const r = mulberry32(9);
+  for (let y = -ts; y < H + ts; y += ts) for (let x = -ts; x < W + ts; x += ts) {
+    const v = r();
+    S.fillStyle = v < 0.33 ? '#1F6C71' : v < 0.66 ? '#247A7F' : '#1B6166';
+    S.fillRect(x + ts * 0.04, y + ts * 0.04, ts * 0.92, ts * 0.92);
   }
-  // waveform
-  const amp = (0.05 + 0.10 * beatEnv(t, 7)) * H * ease.outCubic(clamp(lt / 0.2));
-  const drawWave = (color, width, phase, a, k) => {
-    L.strokeStyle = color;
-    L.lineWidth = width;
-    L.beginPath();
-    for (let i = 0; i <= 160; i++) {
-      const x = (i / 160) * W;
-      const u = i / 160;
-      const envx = Math.sin(Math.PI * u);
-      const y = H * 0.5 + a * envx * (Math.sin(u * k + phase - t * 18) * 0.7 + Math.sin(u * k * 2.3 + phase * 1.7 - t * 27) * 0.3);
-      i ? L.lineTo(x, y) : L.moveTo(x, y);
-    }
-    L.stroke();
-  };
-  drawWave(rgba(C.ink, 0.12), Math.max(1, 0.002 * H), 1.3, amp * 0.7, 21);
-  drawWave(C.red, 0.0065 * H, 0, amp, 17);
-  // key letters drop in with a bounce, then breathe in weight
-  const lay0 = blockLayout(K, 'SONG');
-  const f = font('mona', lay0.size, 900, lay0.wdth);
-  const lw = layout(L, 'SONG', f);
+  const lg = S.createRadialGradient(W * 0.3, -H * 0.1, 0, W * 0.3, -H * 0.1, H * 1.4);
+  lg.addColorStop(0, 'rgba(255,240,215,0.45)'); lg.addColorStop(1, 'rgba(0,20,25,0.25)');
+  S.fillStyle = lg; S.fillRect(0, 0, W, H);
+  S.restore();
+  // fog
+  const F = fogBuffers(W, H);
+  F.setTransform(1, 0, 0, 1, 0, 0);
+  F.globalCompositeOperation = 'source-over';
+  F.globalAlpha = 1;
+  F.clearRect(0, 0, W, H);
+  F.fillStyle = 'rgba(232,238,237,0.95)'; F.fillRect(0, 0, W, H);
+  F.globalAlpha = 0.14;
+  F.drawImage(fogNoise, -((t * 12) % 64), 0, W + 64, H);
+  F.globalAlpha = 1;
+  F.globalCompositeOperation = 'destination-out';
+  for (const [x, y, s] of CONDENSATION) {
+    F.globalAlpha = 0.25 + 0.5 * s;
+    F.beginPath(); F.arc(x * W, y * H, (0.0018 + 0.006 * s) * H, 0, TAU); F.fill();
+  }
+  const lay = keyLayout(K, 'SONG', 'center', { cy: 0.46, targetW: 0.6 });
+  const fk = font('mona', lay.size, 900, lay.wdth);
+  const lw = layout(F, 'SONG', fk);
+  const writeT = (i) => 0.12 + i * 0.11;
+  F.font = fk;
+  F.fillStyle = '#000';
   for (const ch of lw.chars) {
-    const p = clamp((lt - 0.02 - ch.i * 0.045) / 0.34);
+    const p = clamp((lt - writeT(ch.i)) / 0.13);
     if (p <= 0) continue;
-    const y = lerp(-0.65 * H, 0, ease.outBack(p, 1.9));
-    const rot = (1 - ease.outCubic(p)) * (ch.i % 2 ? 0.25 : -0.25);
-    const pulse = p >= 1 ? 0.5 + 0.5 * Math.sin(t * TAU * 2 - ch.i * 1.2) : 1;
-    const wg = lerp(640, 900, pulse);
-    const cx = lay0.x0 + ch.x + ch.w / 2;
-    L.save();
-    L.translate(cx, lay0.baseline + y);
-    L.rotate(rot);
-    L.font = font('mona', lay0.size, wg, lay0.wdth);
-    L.textAlign = 'center';
-    L.fillStyle = sc.fg;
-    L.fillText(ch.ch, 0, 0);
-    L.restore();
+    F.save(); F.globalAlpha = 0.97;
+    F.beginPath(); F.rect(lay.x0 + ch.x - 4, lay.top - lay.capPx * 0.3, (ch.w + 8) * ease.outQuad(p), lay.capPx * 1.6); F.clip();
+    F.fillText(ch.ch, lay.x0 + ch.x, lay.baseline);
+    F.restore();
   }
-  drawThat(K, lay0, lt, 0.1, sc.sub);
-  riseTail(K, COPY.lines[1].tail, lay0, lt, 0.24, 0.0625, sc);
+  // drips running out of the letters
+  F.globalAlpha = 0.95;
+  F.lineCap = 'round';
+  for (const d of DRIPS) {
+    const ch = lw.chars[d.ch];
+    const p = ease.outCubic(clamp((lt - d.t0) / 0.9));
+    if (p <= 0) continue;
+    const x = lay.x0 + ch.x + ch.w * d.fx, y0 = lay.baseline - lay.capPx * 0.05, y1 = y0 + d.len * H * p;
+    F.lineWidth = 0.006 * H;
+    F.beginPath(); F.moveTo(x, y0); F.lineTo(x, y1); F.stroke();
+    F.beginPath(); F.arc(x, y1, 0.0065 * H, 0, TAU); F.fill();
+  }
+  // a little music note doodled beside the word
+  const np = clamp((lt - 0.62) / 0.3);
+  if (np > 0) {
+    const nx = lay.x0 + lay.width + 0.05 * H, ny = lay.top + 0.02 * H, u = 0.07 * H;
+    F.save(); F.lineWidth = 0.014 * H; F.lineCap = 'round'; F.lineJoin = 'round';
+    F.setLineDash([u * 6 * np, u * 6]);
+    F.beginPath(); F.ellipse(nx, ny + u * 2.2, u * 0.5, u * 0.36, -0.4, 0, TAU);
+    F.moveTo(nx + u * 0.45, ny + u * 2.1); F.lineTo(nx + u * 0.45, ny); F.quadraticCurveTo(nx + u * 1.1, ny + u * 0.4, nx + u * 1.0, ny + u * 1.0);
+    F.stroke(); F.restore();
+  }
+  // "that" and the tail, wiped with a fingertip
+  const wipeText = (text, f, x, y, t0, dur) => {
+    const p = clamp((lt - t0) / dur);
+    if (p <= 0) return;
+    const w = textWidth(F, text, f);
+    F.save(); F.beginPath(); F.rect(x - 6, y - 0.2 * H, (w + 12) * p, 0.3 * H); F.clip();
+    F.font = f; F.globalAlpha = 0.95; F.fillText(text, x, y); F.restore();
+  };
+  const fThat = font('serifIt', lay.thatSize), fTail = font('serifIt', lay.tailSize);
+  wipeText('that', fThat, lay.thatX, lay.thatBase, 0.04, 0.12);
+  const tail = COPY.lines[1].tail;
+  const tw = textWidth(F, tail, fTail);
+  wipeText(tail, fTail, lay.x0 + lay.width - tw, lay.tailBase, 0.5, 0.42);
+  F.globalCompositeOperation = 'source-over';
+  F.globalAlpha = 1;
+  L.drawImage(fogCanvas, 0, 0);
+  // warm light bloom from above
+  G.globalAlpha = 0.25; G.drawImage(glowDot(128, [255, 230, 190]), W * 0.1, -H * 0.6, W * 0.5, H); G.globalAlpha = 1;
+  // lights out
+  const off = seg(lt, 2.28, 2.34);
+  if (off > 0) { L.fillStyle = `rgba(0,0,0,${off})`; L.fillRect(0, 0, W, H); }
 }
 
-// 03 STORY — 2 AM night, dim red clock, letters flicker on like a lamp
+// ---- 03 STORY — the last lit window at 2 AM ------------------------------------
 
-const STARS = Array.from({ length: 70 }, (_, i) => { const r = mulberry32(700 + i); return { x: r(), y: r() * 0.8, s: 0.4 + r() * 1.2, ph: r() * TAU }; });
-const SEG = { 0: 'abcdef', 1: 'bc', 2: 'abged', 5: 'afgcd', 9: 'abcfgd' };
-function sevenSeg(ctx, digit, x, y, h, color) {
-  const w = h * 0.52, th = h * 0.1, s = SEG[digit] || '';
-  const segs = {
-    a: [x + th * 0.6, y, w - th * 1.2, th], d: [x + th * 0.6, y + h - th, w - th * 1.2, th], g: [x + th * 0.6, y + h / 2 - th / 2, w - th * 1.2, th],
-    f: [x, y + th * 0.6, th, h / 2 - th * 0.9], b: [x + w - th, y + th * 0.6, th, h / 2 - th * 0.9],
-    e: [x, y + h / 2 + th * 0.3, th, h / 2 - th * 0.9], c: [x + w - th, y + h / 2 + th * 0.3, th, h / 2 - th * 0.9],
-  };
-  ctx.fillStyle = color;
-  for (const k of s) { const r = segs[k]; ctx.beginPath(); ctx.roundRect(r[0], r[1], r[2], r[3], th * 0.4); ctx.fill(); }
-  return w;
+const BLD = (() => {
+  const r = mulberry32(2020);
+  const cols = 11, rows = 6, keep = 2 * cols + 7;
+  const wins = [];
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const v = r();
+    wins.push({ i, j, kind: v < 0.72 ? 'warm' : v < 0.88 ? 'tv' : 'dark', rank: r(), ac: r() < 0.25, rail: r() < 0.35 });
+  }
+  wins[keep].kind = 'warm';
+  const order = wins.map((w, k) => [w.rank, k]).sort((a, b) => a[0] - b[0]).map(([, k]) => k).filter((k) => k !== keep);
+  order.forEach((k, n) => { wins[k].off = 0.05 + (n / order.length) * 0.58; });
+  wins[keep].off = Infinity;
+  return { cols, rows, keep, wins };
+})();
+
+function buildingGeom(K) {
+  const { W, H } = K;
+  const p = portraitOf(K);
+  const top = (p ? 0.3 : 0.2) * H;
+  const cw = W / (BLD.cols + 0.6), ww = cw * 0.64;
+  const rh = (H - top) / (BLD.rows + 0.3), wh = rh * 0.56;
+  return { top, cw, ww, rh, wh, x0: cw * 0.3 + (cw - ww) / 2, y0: top + rh * 0.3 };
 }
 
 function sceneStory(K, lt, t) {
-  const { L, S, G, W, H } = K;
-  const sc = SCHEME[2];
-  const g = L.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#04051A');
-  g.addColorStop(1, '#131845');
-  L.fillStyle = g;
-  L.fillRect(0, 0, W, H);
-  for (const s of STARS) {
-    const a = 0.35 + 0.65 * Math.pow(0.5 + 0.5 * Math.sin(t * 5 + s.ph), 2);
-    L.globalAlpha = a * 0.8;
+  const { L, G, W, H } = K;
+  const B = buildingGeom(K);
+  const kw = BLD.wins[BLD.keep];
+  const kx = B.x0 + kw.i * B.cw, ky = B.y0 + kw.j * B.rh;
+  const z = ease.inOutCubic(seg(lt, 0.7, 1.02));
+  const target = portraitOf(K) ? 0.94 * W / B.ww : Math.min(0.84 * W / B.ww, 0.76 * H / B.wh);
+  const s = Math.exp(lerp(0, Math.log(target), z)) * (1 + 0.03 * seg(lt, 1.0, 2.4));
+  const P = [kx + B.ww / 2, ky + B.wh / 2];
+  const Q = [lerp(P[0], W / 2, z), lerp(P[1], (portraitOf(K) ? 0.62 : 0.5) * H, z)];
+  setView(K, zoomM(P, Q, s));
+  // sky
+  const sg = L.createLinearGradient(0, 0, 0, H);
+  sg.addColorStop(0, '#03041A'); sg.addColorStop(1, '#141A4A');
+  L.fillStyle = sg; L.fillRect(-W, -H, 3 * W, 3 * H);
+  for (const st of STARS) {
+    L.globalAlpha = (0.35 + 0.65 * Math.pow(0.5 + 0.5 * Math.sin(t * 5 + st.ph), 2)) * 0.8;
     L.fillStyle = '#FFFFFF';
-    L.beginPath(); L.arc(s.x * W, s.y * H, s.s * 0.0016 * H + 0.5, 0, TAU); L.fill();
+    L.beginPath(); L.arc(st.x * W, st.y * B.top, st.s * 0.0016 * H + 0.5, 0, TAU); L.fill();
   }
   L.globalAlpha = 1;
-  // crescent moon
-  const mx = 0.84 * W, my = (H > W ? 0.16 : 0.2) * H, mr = 0.05 * Math.min(W, H);
-  G.globalAlpha = 0.5;
-  G.drawImage(glowDot(128), mx - mr * 3, my - mr * 3, mr * 6, mr * 6);
-  G.globalAlpha = 1;
-  L.save();
-  L.beginPath(); L.arc(mx, my, mr, 0, TAU); L.arc(mx + mr * 0.45, my - mr * 0.2, mr * 0.88, 0, TAU, true); L.fillStyle = '#F6EBD2'; L.fill('evenodd');
-  L.restore();
-  // clock digits, huge and dim, behind the type
-  const dh = Math.min(0.46 * H, 0.34 * W);
-  const flip = lt > 0.18;
-  const digits = flip ? [0, 2, ':', 0, 0] : [0, 1, ':', 5, 9];
-  let dw = 0;
-  for (const d of digits) dw += d === ':' ? dh * 0.22 : dh * 0.62;
-  let x = (W - dw) / 2;
-  const flick = lt > 0.16 && lt < 0.22 && Math.floor(lt * 90) % 2 === 0;
-  for (const d of digits) {
-    if (d === ':') {
-      const on = Math.floor(t * 2) % 2 === 0;
-      for (const cy of [0.33, 0.67]) { S.fillStyle = on ? '#FF3A1F' : '#5A1208'; S.beginPath(); S.arc(x + dh * 0.08, (H - dh) / 2 + dh * cy, dh * 0.045, 0, TAU); S.fill(); }
-      x += dh * 0.22;
-      continue;
+  // roofline: water tank and a dish antenna
+  L.fillStyle = '#0E1128';
+  L.fillRect(0.16 * W, B.top - 0.07 * H, 0.07 * W, 0.07 * H);
+  L.beginPath(); L.ellipse(0.195 * W, B.top - 0.07 * H, 0.035 * W, 0.012 * H, 0, 0, TAU); L.fill();
+  L.fillRect(0.2 * W, B.top - 0.095 * H, 0.003 * W, 0.03 * H);
+  L.beginPath(); L.ellipse(0.74 * W, B.top - 0.035 * H, 0.02 * W, 0.028 * H, -0.6, 0, TAU); L.fill();
+  L.fillRect(0.738 * W, B.top - 0.03 * H, 0.004 * W, 0.03 * H);
+  // facade
+  const fg = L.createLinearGradient(0, B.top, 0, H);
+  fg.addColorStop(0, '#1A1F3E'); fg.addColorStop(1, '#0D1028');
+  L.fillStyle = fg; L.fillRect(-0.01 * W, B.top, 1.02 * W, H - B.top + 2);
+  L.fillStyle = 'rgba(0,0,0,0.25)';
+  for (let j = 0; j <= BLD.rows; j++) L.fillRect(0, B.y0 - B.rh * 0.22 + j * B.rh, W, B.rh * 0.05);
+  for (const w of BLD.wins) {
+    const x = B.x0 + w.i * B.cw, y = B.y0 + w.j * B.rh;
+    let on = w.kind === 'dark' ? 0 : 1;
+    const a = lt - w.off;
+    if (a > 0) on = a < 0.05 ? (Math.floor(a * 120) % 2 ? 0.4 : 0) : 0;
+    if (on > 0) {
+      const wg = L.createLinearGradient(0, y, 0, y + B.wh);
+      if (w.kind === 'tv') { wg.addColorStop(0, '#9CC0FF'); wg.addColorStop(1, '#4E6DD8'); }
+      else { wg.addColorStop(0, '#FFE2A0'); wg.addColorStop(1, '#FF9A45'); }
+      L.globalAlpha = on;
+      L.fillStyle = wg; L.fillRect(x, y, B.ww, B.wh);
+      // curtains
+      L.fillStyle = w.kind === 'tv' ? 'rgba(30,40,110,0.35)' : 'rgba(190,70,40,0.55)';
+      L.fillRect(x, y, B.ww * 0.13, B.wh); L.fillRect(x + B.ww * 0.87, y, B.ww * 0.13, B.wh);
+      L.fillStyle = 'rgba(120,30,15,0.25)';
+      for (let k = 0; k < 3; k++) { L.fillRect(x + B.ww * (0.02 + k * 0.04), y, B.ww * 0.012, B.wh); L.fillRect(x + B.ww * (0.89 + k * 0.035), y, B.ww * 0.01, B.wh); }
+      L.globalAlpha = 1;
+      G.globalAlpha = 0.18 * on;
+      G.drawImage(glowDot(64, w.kind === 'tv' ? [120, 150, 255] : [255, 170, 90]), x - B.ww * 0.3, y - B.wh * 0.4, B.ww * 1.6, B.wh * 1.8);
+      G.globalAlpha = 1;
+    } else {
+      L.fillStyle = '#070918'; L.fillRect(x, y, B.ww, B.wh);
     }
-    for (const [ctx, col, a] of [[L, '#FF2E17', 0.14], [S, '#FF3A1F', flick ? 0.2 : 0.75]]) {
-      ctx.save(); ctx.globalAlpha = a * ease.outCubic(clamp(lt / 0.12)); sevenSeg(ctx, d, x, (H - dh) / 2, dh, col); ctx.restore();
+    L.fillStyle = '#0A0C20';
+    L.fillRect(x - B.ww * 0.03, y - B.wh * 0.03, B.ww * 1.06, B.wh * 0.03);
+    if (w !== kw || z < 0.3) { L.globalAlpha = w === kw ? 1 - z / 0.3 : 1; L.fillRect(x + B.ww * 0.49, y, B.ww * 0.02, B.wh); L.globalAlpha = 1; }
+    if (w.ac && w !== kw) { L.fillStyle = '#2A2F4A'; L.fillRect(x + B.ww * 0.62, y + B.wh * 0.78, B.ww * 0.34, B.wh * 0.26); }
+    if (w.rail) { L.fillStyle = '#0A0C1E'; L.fillRect(x - B.ww * 0.05, y + B.wh * 0.72, B.ww * 1.1, B.wh * 0.04); for (let k = 0; k < 7; k++) L.fillRect(x - B.ww * 0.05 + k * B.ww * 0.18, y + B.wh * 0.72, B.ww * 0.015, B.wh * 0.28); }
+  }
+  setView(K, IDENT);
+  // clock
+  const ca = 1 - z;
+  if (ca > 0.01) {
+    const dh = 0.09 * H, flip = lt > 0.66;
+    const digits = flip ? [0, 2, ':', 0, 0] : [0, 1, ':', 5, 9];
+    let x = W / 2 - dh * 1.3;
+    L.save(); L.globalAlpha = ca;
+    for (const d of digits) {
+      if (d === ':') { L.fillStyle = '#FF3A1F'; for (const cy of [0.33, 0.67]) { L.beginPath(); L.arc(x + dh * 0.08, 0.06 * H + dh * cy, dh * 0.045, 0, TAU); L.fill(); } x += dh * 0.22; continue; }
+      sevenSeg(L, d, x, 0.06 * H, dh, '#FF3A1F'); x += dh * 0.62;
     }
-    x += dh * 0.62;
-  }
-  // key letters flicker on
-  const lay = blockLayout(K, 'STORY');
-  const f = font('mona', lay.size, 900, lay.wdth);
-  const lw = layout(L, 'STORY', f);
-  for (const ch of lw.chars) {
-    const tOn = 0.02 + hash1(ch.i * 3.1 + 5) * 0.16;
-    let on = 0;
-    if (lt > tOn + 0.12) on = 1;
-    else if (lt > tOn) on = hash1(Math.floor(lt * 60) + ch.i * 13) > 0.45 ? 1 : 0.15;
-    if (on <= 0) continue;
-    const x1 = lay.x0 + ch.x;
-    L.save(); L.font = f; L.globalAlpha = on; L.fillStyle = sc.fg; L.fillText(ch.ch, x1, lay.baseline); L.restore();
-    S.save(); S.font = f; S.globalAlpha = on * 0.55; S.fillStyle = '#FFD9A0'; S.fillText(ch.ch, x1, lay.baseline); S.restore();
-  }
-  drawThat(K, lay, lt, 0.1, sc.sub);
-  riseTail(K, 'you only tell at *2 AM*.', lay, lt, 0.24, 0.0625, sc);
-}
-
-// 04 JOKE — group-chat bubbles pop in, letters wobble with laughter
-
-const BUBBLES = [
-  { text: 'HAHAHAHAHA', side: 0, x: 0.055, y: 0.20, t0: 0.04 },
-  { text: "I'M CRYING", side: 1, x: 0.945, y: 0.24, t0: 0.15 },
-  { text: 'say it again', side: 0, x: 0.03, y: 0.66, t0: 0.30 },
-  { text: 'LMAOOO', side: 1, x: 0.97, y: 0.55, t0: 0.42, red: true },
-  { text: '•••', side: 0, x: 0.03, y: 0.78, t0: 0.58 },
-]
-const BUBBLES_PORTRAIT = [[0.06, 0.25], [0.94, 0.31], [0.06, 0.74], [0.94, 0.79], [0.06, 0.85]];
-function bubbleGeom(K, b) {
-  const { L, W, H } = K;
-  if (H > W) { const i = BUBBLES.indexOf(b); b = { ...b, x: BUBBLES_PORTRAIT[i][0], y: BUBBLES_PORTRAIT[i][1] }; }
-  const U = Math.min(H, W * 0.9);
-  const size = 0.034 * U;
-  const f = font('mona', size, 700, 100);
-  const tw = textWidth(L, b.text, f);
-  const padX = size * 0.8, padY = size * 0.55;
-  const bw = tw + padX * 2, bh = size + padY * 2;
-  const ax = b.x * W, ay = b.y * H;
-  const bx = b.side ? ax - bw : ax;
-  return { f, size, bw, bh, bx, by: ay - bh, ax, ay, padX, padY };
-}
-function drawBubble(K, b, s, alpha = 1) {
-  const { L } = K;
-  const g = bubbleGeom(K, b);
-  L.save();
-  L.globalAlpha = alpha;
-  L.translate(g.ax, g.ay);
-  L.scale(s, s);
-  L.translate(-g.ax, -g.ay);
-  L.fillStyle = b.side || b.red ? C.red : '#2C2B31';
-  L.beginPath();
-  L.roundRect(g.bx, g.by, g.bw, g.bh, g.bh * 0.42);
-  L.fill();
-  L.beginPath();
-  const tx = b.side ? g.ax - g.bh * 0.25 : g.ax + g.bh * 0.25;
-  L.moveTo(tx, g.ay - g.bh * 0.3);
-  L.quadraticCurveTo(b.side ? g.ax + g.bh * 0.02 : g.ax - g.bh * 0.02, g.ay + g.bh * 0.08, b.side ? g.ax + g.bh * 0.16 : g.ax - g.bh * 0.16, g.ay + g.bh * 0.05);
-  L.quadraticCurveTo(b.side ? g.ax - g.bh * 0.15 : g.ax + g.bh * 0.15, g.ay - g.bh * 0.02, b.side ? g.ax - g.bh * 0.55 : g.ax + g.bh * 0.55, g.ay - g.bh * 0.12);
-  L.fill();
-  L.font = g.f;
-  L.fillStyle = C.cream;
-  L.textBaseline = 'middle';
-  L.fillText(b.text, g.bx + g.padX, g.by + g.bh / 2 + g.size * 0.04);
-  L.restore();
-  return g;
-}
-
-function sceneJoke(K, lt, t) {
-  const { L, W, H } = K;
-  const sc = SCHEME[3];
-  L.fillStyle = C.ink;
-  L.fillRect(0, 0, W, H);
-  for (const b of BUBBLES) {
-    const a = lt - b.t0;
-    if (a <= 0) continue;
-    if (b.text === '•••') {
-      const g = drawBubble(K, b, spring(a, 2.4, 8));
-      for (let i = 0; i < 3; i++) {
-        const yy = g.by + g.bh / 2 - Math.max(0, Math.sin(t * 12 - i * 1.1)) * g.size * 0.25;
-        L.fillStyle = rgba(C.cream, 0.9);
-        L.beginPath(); L.arc(g.bx + g.padX + g.size * (0.3 + i * 0.75), yy, g.size * 0.17, 0, TAU); L.fill();
-      }
-      continue;
-    }
-    drawBubble(K, b, spring(a, 2.4, 8));
-  }
-  const lay = blockLayout(K, 'JOKE');
-  const f = font('mona', lay.size, 900, lay.wdth);
-  const lw = layout(L, 'JOKE', f);
-  for (const ch of lw.chars) {
-    const a = lt - 0.02 - ch.i * 0.04;
-    if (a <= 0) continue;
-    const s = spring(a, 2.6, 7.5);
-    const laugh = 0.035 * Math.sin(t * 44 + ch.i * 2.1) * smoothstep(0.3, 0.45, lt);
-    const rot = (hash1(ch.i + 40) - 0.5) * 0.12 + laugh + (1 - clamp(a / 0.3)) * (ch.i % 2 ? 0.3 : -0.3);
-    const cx = lay.x0 + ch.x + ch.w / 2, cy = lay.baseline - lay.capPx / 2;
-    L.save();
-    L.translate(cx, cy);
-    L.rotate(rot);
-    L.scale(s, s);
-    L.font = f;
-    L.textAlign = 'center';
-    L.fillStyle = sc.fg;
-    L.fillText(ch.ch, 0, lay.capPx / 2);
     L.restore();
   }
-  drawThat(K, lay, lt, 0.1, sc.sub);
-  riseTail(K, COPY.lines[3].tail, lay, lt, 0.24, 0.0625, sc);
-}
-
-// 05 MIX — spinning record with the SHADES label, scratch-stutter type
-
-let vinyl = null;
-function vinylCanvas(R) {
-  if (vinyl && vinyl.R === R) return vinyl;
-  const c = document.createElement('canvas');
-  c.width = c.height = Math.ceil(R * 2);
-  const x = c.getContext('2d');
-  x.translate(R, R);
-  x.fillStyle = '#0B0A0B';
-  x.beginPath(); x.arc(0, 0, R, 0, TAU); x.fill();
-  const r = mulberry32(99);
-  for (let rr = R * 0.36; rr < R * 0.985; rr += Math.max(1.2, R * 0.0045)) {
-    x.strokeStyle = `rgba(255,255,255,${0.018 + r() * 0.045})`;
-    x.lineWidth = 1;
-    x.beginPath(); x.arc(0, 0, rr, 0, TAU); x.stroke();
+  // the story, told in the last lit window
+  if (lt > 0.85) {
+    const winW = B.ww * s;
+    const lay = keyLayout(K, 'STORY', 'center', { cy: portraitOf(K) ? 0.58 : 0.47, targetW: Math.min(0.56, (winW / W) * 0.66), cap: 0.24 * H, pCap: 0.08 * H, pY: 0.56, pTargetW: Math.min(0.84, (winW / W) * 0.72) });
+    if (portraitOf(K)) { lay.baseline = 0.6 * H + lay.capPx / 2; lay.top = lay.baseline - lay.capPx; lay.thatBase = lay.top - 0.035 * lay.U; lay.tailBase = lay.baseline + 0.105 * lay.U; }
+    const lt2 = lt - 0.85;
+    drawKey(L, lay, 'STORY', '#1C1209', (ch) => {
+      const p = ease.snap(clamp((lt2 - ch.i * 0.04) / 0.3));
+      return p > 0 ? { a: p, dy: (1 - p) * lay.capPx * 0.35 } : null;
+    });
+    textBlock(K, lay, lt2, COPY.lines[2].tail, { sub: '#1C1209', accent: '#B8200C' }, { that: 0.05, tailT: 0.2 });
   }
-  x.strokeStyle = 'rgba(255,255,255,0.12)';
-  x.lineWidth = R * 0.006;
-  for (const rr of [0.52, 0.68, 0.84]) { x.beginPath(); x.arc(0, 0, R * rr, 0, TAU); x.stroke(); }
-  const lab = brandDiscCanvas(512, true);
-  x.drawImage(lab, -R * 0.34, -R * 0.34, R * 0.68, R * 0.68);
-  x.fillStyle = '#0B0A0B';
-  x.beginPath(); x.arc(0, 0, R * 0.018, 0, TAU); x.fill();
-  vinyl = { c, R };
-  return vinyl;
+  const off = seg(lt, 2.28, 2.33);
+  if (off > 0) { L.fillStyle = `rgba(0,0,0,${off})`; L.fillRect(0, 0, W, H); }
 }
 
-function sceneMix(K, lt, t, ctxL) {
+// ---- 04 JOKE — the group chat that never lets it go -------------------------------
+
+const MSGS = [
+  { t: 0.02, who: 'Aditi', col: '#FF9466', quote: 'the maggi at 3 AM story', text: 'STILL not over this' },
+  { t: 0.2, who: 'Rohan', col: '#7FD1FF', text: 'HAHAHAHAHAHA' },
+  { t: 0.36, who: 'Meera', col: '#F7A8FF', text: 'i literally cannot breathe' },
+  { t: 0.52, who: 'Sam', col: '#9BF08A', quote: '“bhaiya, ek aur plate”', text: 'ICONIC' },
+  { t: 0.7, who: 'Dev', col: '#FFD36B', text: 'tell it again at the reunion' },
+  { t: 0.95, me: true, text: 'someone put this on a stage' },
+];
+
+function chatGeom(K) {
   const { W, H } = K;
-  const L = ctxL;
-  const sc = SCHEME[4];
-  L.fillStyle = C.red;
-  L.fillRect(0, 0, W, H);
-  const { R, cx, cy } = mixRecord(K);
-  const v = vinylCanvas(Math.round(R));
-  const intro = ease.outExpo(clamp(lt / 0.24));
-  const rot = lt * 5.5 + (1 - intro) * -2.5;
-  L.save();
-  L.translate(cx, cy);
-  L.rotate(rot);
-  L.scale(intro, intro);
-  L.drawImage(v.c, -v.R, -v.R);
-  L.restore();
-  // fixed sheen on the vinyl
-  if (intro > 0.01) {
-    const cg = L.createConicGradient(-0.6, cx, cy);
-    cg.addColorStop(0, 'rgba(255,255,255,0)');
-    cg.addColorStop(0.08, 'rgba(255,255,255,0.10)');
-    cg.addColorStop(0.16, 'rgba(255,255,255,0)');
-    cg.addColorStop(0.5, 'rgba(255,255,255,0)');
-    cg.addColorStop(0.58, 'rgba(255,255,255,0.08)');
-    cg.addColorStop(0.66, 'rgba(255,255,255,0)');
-    cg.addColorStop(1, 'rgba(255,255,255,0)');
-    L.save();
-    L.beginPath(); L.arc(cx, cy, R * intro, 0, TAU); L.arc(cx, cy, R * 0.34 * intro, 0, TAU, true); L.clip('evenodd');
-    L.fillStyle = cg;
-    L.fillRect(cx - R, cy - R, 2 * R, 2 * R);
-    L.restore();
-  }
-  const lay = blockLayout(K, 'MIX', MIX_LAYOUT(K));
-  const f = font('mona', lay.size, 900, lay.wdth);
-  // scratch: back-and-forth offsets
-  const sp = clamp((lt - 0.26) / 0.3);
-  const scratch = sp > 0 && sp < 1 ? Math.sin(sp * TAU * 2.5) * (1 - sp) * 0.06 * W : 0;
-  const appear = ease.snap(clamp((lt - 0.02) / 0.16));
-  if (appear > 0) {
-    L.save();
-    L.font = f;
-    if (Math.abs(scratch) > 1) {
-      L.globalAlpha = 0.55 * appear;
-      L.fillStyle = '#00E1FF';
-      L.fillText('MIX', lay.x0 + scratch * 1.35, lay.baseline);
-      L.fillStyle = '#FFFFFF';
-      L.fillText('MIX', lay.x0 + scratch * 0.6, lay.baseline);
-    }
-    L.globalAlpha = appear;
-    L.fillStyle = sc.fg;
-    L.fillText('MIX', lay.x0 + scratch, lay.baseline + (1 - appear) * 0.08 * H);
-    L.restore();
-  }
-  const kk = { L, S: K.S, G: K.G, W, H };
-  drawThat(kk, lay, lt, 0.1, sc.sub);
-  riseTail(kk, COPY.lines[4].tail, lay, lt, 0.3, 0.0625, sc);
-  return { R, cx, cy };
+  if (portraitOf(K)) return { x: 0.06 * W, y: 0.44 * H, w: 0.88 * W, h: 0.52 * H, u: 0.024 * W * 1.4 };
+  return { x: 0.58 * W, y: 0.06 * H, w: 0.37 * W, h: 0.88 * H, u: 0.024 * H };
 }
+
+function laughFace(ctx, x, y, r) {
+  ctx.save();
+  ctx.fillStyle = '#FFC93C'; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  ctx.strokeStyle = '#6B3A00'; ctx.lineWidth = r * 0.14; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(x - r * 0.38, y - r * 0.18, r * 0.18, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x + r * 0.38, y - r * 0.18, r * 0.18, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  ctx.fillStyle = '#6B3A00'; ctx.beginPath(); ctx.moveTo(x - r * 0.55, y + r * 0.1); ctx.quadraticCurveTo(x, y + r * 0.95, x + r * 0.55, y + r * 0.1); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#7FD1FF'; ctx.beginPath(); ctx.ellipse(x - r * 0.78, y + r * 0.05, r * 0.14, r * 0.26, 0.3, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + r * 0.78, y + r * 0.05, r * 0.14, r * 0.26, -0.3, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
+/** Lays out and draws the chat; returns the rect of the last ("me") bubble. */
+function drawChat(K, lt) {
+  const { L } = K;
+  const Cg = chatGeom(K);
+  const u = Cg.u;
+  const on = ease.outCubic(clamp(lt / 0.12));
+  L.save();
+  L.globalAlpha = on;
+  L.fillStyle = '#12151A';
+  L.beginPath(); L.roundRect(Cg.x, Cg.y, Cg.w, Cg.h, u * 1.2); L.fill();
+  // header
+  const hh = u * 3.6;
+  L.fillStyle = '#191D24'; L.beginPath(); L.roundRect(Cg.x, Cg.y, Cg.w, hh, [u * 1.2, u * 1.2, 0, 0]); L.fill();
+  L.fillStyle = C.red; L.beginPath(); L.arc(Cg.x + u * 2, Cg.y + hh / 2, u * 1.1, 0, TAU); L.fill();
+  L.fillStyle = '#fff'; L.font = font('mona', u * 1.1, 800); L.textAlign = 'center'; L.textBaseline = 'middle';
+  L.fillText('B', Cg.x + u * 2, Cg.y + hh / 2 + u * 0.05);
+  L.textAlign = 'left';
+  L.fillStyle = '#F2F2F2'; L.font = font('mona', u * 1.0, 700);
+  L.fillText('B-Wing, 3rd floor', Cg.x + u * 3.7, Cg.y + hh * 0.36);
+  L.fillStyle = lt > 0.6 ? '#7DE08A' : '#8A919C'; L.font = font('mona', u * 0.72, 500);
+  L.fillText(lt > 0.6 && lt < 0.95 ? 'Dev is typing…' : 'Aditi, Dev, Meera, Rohan, Sam +9', Cg.x + u * 3.7, Cg.y + hh * 0.7);
+  L.textBaseline = 'alphabetic';
+  // input bar
+  const ib = u * 2.4;
+  L.fillStyle = '#1D2128'; L.beginPath(); L.roundRect(Cg.x + u * 0.8, Cg.y + Cg.h - ib - u * 0.8, Cg.w - u * 1.6, ib, ib / 2); L.fill();
+  L.fillStyle = '#6C737E'; L.font = font('mona', u * 0.85, 450);
+  L.fillText('Message', Cg.x + u * 1.8, Cg.y + Cg.h - ib / 2 - u * 0.8 + u * 0.3);
+  // messages, stacked from the bottom
+  L.save();
+  L.beginPath(); L.rect(Cg.x, Cg.y + hh, Cg.w, Cg.h - hh - ib - u * 1.2); L.clip();
+  const fText = font('mona', u * 0.98, 520), fName = font('mona', u * 0.74, 720), fQuote = font('serifIt', u * 0.9);
+  const heights = MSGS.map((m) => u * (m.me ? 2.3 : 3.2) + (m.quote ? u * 2.0 : 0));
+  const gap = u * 0.6;
+  let y = Cg.y + Cg.h - ib - u * 1.6;
+  let meRect = null;
+  for (let k = MSGS.length - 1; k >= 0; k--) {
+    const m = MSGS[k];
+    const a = lt - m.t;
+    if (a < 0) continue;
+    const grow = ease.outCubic(clamp(a / 0.16));
+    const h = heights[k];
+    y -= (h + gap) * grow;
+    const tw = textWidth(L, m.text, fText);
+    const bw = Math.min(Cg.w * 0.8, Math.max(tw, m.quote ? textWidth(L, m.quote, fQuote) + u * 1.4 : 0, m.me ? 0 : textWidth(L, m.who, fName)) + u * 2);
+    const bx = m.me ? Cg.x + Cg.w - u * 0.9 - bw : Cg.x + u * 0.9;
+    const sp = spring(a, 2.6, 9);
+    L.save();
+    const ox = m.me ? bx + bw : bx, oy = y + h;
+    L.translate(ox, oy); L.scale(sp, sp); L.translate(-ox, -oy);
+    L.fillStyle = m.me ? '#B3200D' : '#20252D';
+    L.beginPath(); L.roundRect(bx, y, bw, h, u * 0.9); L.fill();
+    let ty = y + u * 1.25;
+    if (!m.me) { L.fillStyle = m.col; L.font = fName; L.fillText(m.who, bx + u, ty); ty += u * 1.25; }
+    if (m.quote) {
+      L.fillStyle = 'rgba(255,255,255,0.06)'; L.fillRect(bx + u * 0.7, ty - u * 0.7, bw - u * 1.4, u * 1.6);
+      L.fillStyle = m.col; L.fillRect(bx + u * 0.7, ty - u * 0.7, u * 0.22, u * 1.6);
+      L.fillStyle = '#B9C0CA'; L.font = fQuote; L.fillText(m.quote, bx + u * 1.2, ty + u * 0.32);
+      ty += u * 2.0;
+    }
+    L.fillStyle = '#F5F5F5'; L.font = fText; L.fillText(m.text, bx + u, ty + (m.me ? -u * 0.25 : 0) + u * 0.25);
+    L.restore();
+    if (m.me) meRect = { x: bx, y, w: bw, h };
+  }
+  L.restore();
+  // reaction pill on the last message
+  if (meRect && lt > 1.15) {
+    const p = spring(lt - 1.15, 2.4, 8);
+    const n = Math.round(lerp(12, 47, clamp((lt - 1.15) / 0.5)));
+    const pw = u * 4.2, ph = u * 1.8, px = meRect.x + meRect.w - pw * 0.9, py = meRect.y + meRect.h - ph * 0.35;
+    L.save(); L.translate(px + pw / 2, py + ph / 2); L.scale(p, p); L.translate(-(px + pw / 2), -(py + ph / 2));
+    L.fillStyle = '#2A2F38'; L.beginPath(); L.roundRect(px, py, pw, ph, ph / 2); L.fill();
+    L.strokeStyle = '#12151A'; L.lineWidth = u * 0.25; L.stroke();
+    laughFace(L, px + ph * 0.55, py + ph / 2, ph * 0.34);
+    L.fillStyle = '#EDEDED'; L.font = font('mona', u * 0.9, 700); L.fillText(String(n), px + ph * 1.05, py + ph * 0.68);
+    L.restore();
+  }
+  L.restore();
+  return meRect;
+}
+
+const HAS = Array.from({ length: 14 }, (_, i) => { const r = mulberry32(4100 + i); return { t0: 0.45 + i * 0.1 + r() * 0.05, x: r(), rot: (r() - 0.5) * 0.6, s: 0.7 + r() * 0.6 }; });
+
+function sceneJoke(K, lt, t, doodle = true) {
+  const { L, W, H } = K;
+  L.fillStyle = '#0B0D11'; L.fillRect(0, 0, W, H);
+  if (doodle) {
+    L.save(); L.strokeStyle = 'rgba(255,255,255,0.04)'; L.lineWidth = Math.max(1, 0.002 * H);
+    const r = mulberry32(77);
+    for (let i = 0; i < 60; i++) {
+      const x = r() * W, y = r() * H - (lt * 0.02 * H), s = (0.015 + r() * 0.02) * H;
+      L.beginPath();
+      if (i % 3 === 0) L.arc(x, y, s, 0, TAU); else if (i % 3 === 1) { L.moveTo(x - s, y); L.lineTo(x + s, y); L.moveTo(x, y - s); L.lineTo(x, y + s); } else { L.moveTo(x - s, y); L.quadraticCurveTo(x, y - s, x + s, y); }
+      L.stroke();
+    }
+    L.restore();
+  }
+  const me = drawChat(K, lt);
+  const lay = keyLayout(K, 'JOKE', 'left', { cy: 0.47, targetW: 0.44 });
+  const laughOn = smoothstep(0.35, 0.5, lt);
+  drawKey(L, lay, 'JOKE', C.cream, (ch) => {
+    const a = lt - 0.03 - ch.i * 0.05;
+    if (a <= 0) return null;
+    const s = spring(a, 2.6, 7.5);
+    const laugh = 0.04 * Math.sin(t * 40 + ch.i * 2.1) * laughOn;
+    return { a: 1, s, rot: (hash1(ch.i + 40) - 0.5) * 0.12 + laugh + (1 - clamp(a / 0.3)) * (ch.i % 2 ? 0.3 : -0.3), dy: -Math.abs(Math.sin(t * 20 + ch.i)) * 0.012 * H * laughOn };
+  });
+  // little bursts of "ha" rising off the word
+  const fHa = font('serifIt', 0.045 * lay.U);
+  L.save(); L.font = fHa; L.fillStyle = C.cream;
+  for (const h of HAS) {
+    const a = lt - h.t0;
+    if (a < 0 || a > 0.9) continue;
+    const k = a / 0.9;
+    L.globalAlpha = Math.sin(Math.PI * k) * 0.7;
+    L.save(); L.translate(lay.x0 + (0.3 + 0.7 * h.x) * lay.width, lay.top - 0.03 * H - k * 0.14 * H); L.rotate(h.rot); L.scale(h.s, h.s);
+    L.fillText('ha', 0, 0); L.restore();
+  }
+  L.restore();
+  textBlock(K, lay, lt, COPY.lines[3].tail, { sub: C.cream, accent: C.red }, { tailT: 0.4 });
+  return me;
+}
+
+// ---- 05 MIX — the record the neighbours know by heart ---------------------------
 
 function mixRecord(K) {
   const { W, H } = K;
-  if (H > W) return { R: 0.52 * W, cx: W * 0.5, cy: H * 0.82 };
+  if (portraitOf(K)) return { R: 0.5 * W, cx: W * 0.5, cy: H * 0.8 };
   return { R: 0.6 * H, cx: 0.8 * W, cy: 0.52 * H };
 }
-const MIX_LAYOUT = (K) => (K.H > K.W ? {} : { left: 0.075, targetW: 0.5 });
 
-// ---------------------------------------------------------------------------
-// climax: GIVE IT A MIC.
-
-function climaxLayout(K) {
-  const { L, W, H } = K;
-  const portrait = H > W;
-  const row1 = fitKey(L, 'GIVE IT A', portrait ? 0.84 * W : 0.62 * W, portrait ? 0.07 * H : 0.13 * H);
-  const row2 = fitKey(L, 'MIC', portrait ? 0.70 * W : 0.52 * W, portrait ? 0.2 * H : 0.40 * H);
-  const dotR = row2.capPx * 0.13;
-  const gapDot = row2.capPx * 0.07;
-  const total2 = row2.width + gapDot + dotR * 2;
-  const x2 = (W - total2) / 2;
-  const base2 = H * 0.5 + row2.capPx * 0.62;
-  const base1 = base2 - row2.capPx - 0.075 * H;
-  const x1 = (W - row1.width) / 2;
-  return { row1, row2, x1, x2, base1, base2, dot: [x2 + row2.width + gapDot + dotR, base2 - dotR], dotR };
+let eqCanvas = null;
+function eqBuffer(W, H) {
+  if (!eqCanvas || eqCanvas.width !== W || eqCanvas.height !== H) { eqCanvas = document.createElement('canvas'); eqCanvas.width = W; eqCanvas.height = H; }
+  return eqCanvas.getContext('2d');
 }
 
-function sceneClimax(K, t, post) {
-  const { L, S, G, W, H } = K;
-  L.fillStyle = C.ink;
-  L.fillRect(0, 0, W, H);
-  const lay = climaxLayout(K);
-  const [w1, w2, w3, w4] = T.climaxWords;
-  const zoom = seg(t, T.endHit - 0.26, T.endHit, ease.inExpo);
-  const hold = seg(t, w4, T.endHit - 0.26, ease.linear);
-  // camera: slow push toward the dot, then fly into it
-  const targetR = 0.24 * H;
-  const sHold = 1 + 0.05 * hold;
-  const sZoom = Math.exp(lerp(Math.log(sHold), Math.log(targetR / lay.dotR), zoom));
-  const P = lay.dot;
-  const Q = [lerp(P[0], W / 2, zoom), lerp(P[1], H / 2, zoom)];
-  setView(K, zoomM(P, Q, sZoom));
-  // rays behind the dot
-  if (t > w4) {
-    const a = clamp((t - w4) / 0.3) * (1 - zoom);
-    G.save();
-    G.translate(P[0], P[1]);
-    G.rotate(t * 0.25);
-    for (let i = 0; i < 18; i++) {
-      G.rotate(TAU / 18);
-      G.globalAlpha = a * (0.05 + 0.05 * hash1(i));
-      G.fillStyle = '#FF5A3A';
-      G.beginPath(); G.moveTo(0, 0); G.lineTo(H * 1.4, -H * 0.045); G.lineTo(H * 1.4, H * 0.045); G.fill();
-    }
-    G.restore();
+function sceneMix(K, lt, t) {
+  const { L, S, W, H } = K;
+  L.fillStyle = C.red; L.fillRect(0, 0, W, H);
+  const { R, cx, cy } = mixRecord(K);
+  // sound through the wall: rings on every beat
+  for (let k = 0; k < 4; k++) {
+    const b = (t - T.drop) / (60 / 100);
+    const a = (b - Math.floor(b) + k) * 0.6;
+    L.strokeStyle = `rgba(255,230,210,${0.12 * Math.max(0, 1 - a / 2.4)})`;
+    L.lineWidth = 0.004 * H;
+    L.beginPath(); L.arc(cx, cy, R * (1.02 + a * 0.35), 0, TAU); L.stroke();
   }
-  // row 1 words
-  const f1 = font('mona', lay.row1.size, 900, lay.row1.wdth);
-  const words = ['GIVE', 'IT', 'A'];
-  const times = [w1, w2, w3];
-  let prefix = '';
-  const push = ease.outExpo(clamp((t - w4) / 0.16));
-  const base1 = lerp(H * 0.5 + lay.row1.capPx / 2, lay.base1, push);
-  words.forEach((wd, i) => {
-    const x = lay.x1 + textWidth(L, prefix, f1);
-    prefix += wd + ' ';
-    const a = t - times[i];
-    if (a < 0) return;
-    const p = ease.outExpo(clamp(a / 0.14));
-    const s = lerp(1.7, 1, p);
-    const w = textWidth(L, wd, f1);
-    L.save();
-    L.translate(x + w / 2, base1 - lay.row1.capPx / 2);
-    L.scale(s, s);
-    L.globalAlpha = clamp(a / 0.03);
-    L.font = f1;
-    L.fillStyle = C.cream;
-    L.fillText(wd, -w / 2, lay.row1.capPx / 2);
+  const v = vinylCanvas(Math.round(R));
+  const intro = ease.outExpo(clamp(lt / 0.24));
+  L.save(); L.translate(cx, cy); L.rotate(lt * 5.5 - (1 - intro) * 2.5); L.scale(intro, intro); L.drawImage(v.c, -v.R, -v.R); L.restore();
+  // tonearm
+  if (!portraitOf(K)) {
+    const px = cx + R * 0.92, py = cy - R * 0.92;
+    const ang = 2.25 + 0.05 * Math.sin(t * 2) - (1 - intro) * 0.5;
+    L.save(); L.translate(px, py);
+    L.fillStyle = '#E9E3D8'; L.beginPath(); L.arc(0, 0, R * 0.07, 0, TAU); L.fill();
+    L.rotate(ang); L.fillStyle = '#D9D2C6'; L.fillRect(0, -R * 0.012, R * 0.95, R * 0.024);
+    L.fillStyle = '#2A2A2E'; L.fillRect(R * 0.9, -R * 0.035, R * 0.12, R * 0.07);
     L.restore();
-  });
-  // MIC + red dot
-  const a4 = t - w4;
-  if (a4 >= 0) {
-    const p = ease.outExpo(clamp(a4 / 0.2));
-    const s = lerp(2.6, 1, p);
-    const f2 = font('mona', lay.row2.size, 900, lay.row2.wdth);
-    const cx = W / 2, cy = lay.base2 - lay.row2.capPx / 2;
-    L.save();
-    L.translate(cx, cy);
-    L.scale(s, s);
-    L.translate(-cx, -cy);
-    L.globalAlpha = clamp(a4 / 0.03) * (1 - zoom * 0.9);
-    L.font = f2;
-    L.fillStyle = C.cream;
-    L.fillText('MIC', lay.x2, lay.base2);
-    L.restore();
-    const pulse = 1 + 0.06 * beatEnv(t, 10);
-    const dotS = lerp(3.5, 1, ease.outExpo(clamp((a4 - 0.04) / 0.22)));
-    const r = lay.dotR * dotS * pulse;
-    const disc = brandDiscCanvas(512, false);
-    L.drawImage(disc, P[0] - r, P[1] - r, 2 * r, 2 * r);
-    G.globalAlpha = 0.35 * (1 - zoom);
-    G.drawImage(glowDot(128), P[0] - r * 3, P[1] - r * 3, r * 6, r * 6);
-    G.globalAlpha = 1;
-    // shockwave ring
-    if (a4 < 0.5) {
-      G.save();
-      G.globalAlpha = (1 - a4 / 0.5) * 0.8;
-      G.strokeStyle = '#FFB09A';
-      G.lineWidth = (1 - a4 / 0.5) * 0.02 * H + 1;
-      G.beginPath(); G.arc(P[0], P[1], lay.dotR + a4 * 2.4 * H, 0, TAU); G.stroke();
-      G.restore();
-    }
-    if (a4 < 0.25) { post.flash += Math.exp(-a4 * 28) * 0.8; post.flashColor = [1, 0.9, 0.85]; }
   }
-  setView(K, IDENT);
+  // MIX, built out of equaliser bars
+  const lay = keyLayout(K, 'MIX', 'left', { cy: 0.47, targetW: 0.42 });
+  const appear = ease.snap(clamp((lt - 0.03) / 0.16));
+  if (appear > 0) {
+    const f = font('mona', lay.size, 900, lay.wdth);
+    L.save(); L.globalAlpha = 0.3 * appear; L.font = f; L.fillStyle = C.cream; L.fillText('MIX', lay.x0, lay.baseline); L.restore();
+    const E = eqBuffer(W, H);
+    E.setTransform(1, 0, 0, 1, 0, 0); E.globalCompositeOperation = 'source-over'; E.clearRect(0, 0, W, H);
+    const n = 30, bw = lay.width / n;
+    E.fillStyle = C.cream;
+    for (let i = 0; i < n; i++) {
+      const hgt = clamp(0.55 + 0.3 * beatEnv(t, 5) * (1 - i / n * 0.4) + 0.25 * (noise1(i * 0.7 + t * 7) - 0.3), 0.35, 1) * appear;
+      E.fillRect(lay.x0 + i * bw + bw * 0.12, lay.baseline - lay.capPx * 1.05 * hgt, bw * 0.76, lay.capPx * 1.05 * hgt + 2);
+    }
+    E.globalCompositeOperation = 'destination-in';
+    E.font = f; E.fillText('MIX', lay.x0, lay.baseline);
+    L.drawImage(eqCanvas, 0, 0);
+  }
+  textBlock(K, lay, lt, COPY.lines[4].tail, { sub: C.cream, accent: C.ink }, { tailT: 0.36 });
+  // the neighbour's sticky note
+  const na = lt - 0.9;
+  if (na > 0) {
+    const p = ease.outBack(clamp(na / 0.2), 2.4);
+    const ns = (portraitOf(K) ? 0.24 * W : 0.25 * H);
+    const nx = portraitOf(K) ? 0.62 * W : 0.535 * W, ny = portraitOf(K) ? 0.5 * H : 0.08 * H;
+    const rot = 0.09 - (1 - p) * 0.2;
+    S.save(); S.globalAlpha = 0.5; S.fillStyle = '#420600'; S.translate(nx + ns * 0.5 + 0.01 * H, ny + ns * 0.5 + 0.015 * H); S.rotate(rot); S.fillRect(-ns / 2, -ns / 2, ns, ns); S.restore();
+    L.save();
+    L.translate(nx + ns / 2, ny + ns / 2); L.rotate(rot); L.scale(lerp(1.4, 1, p), lerp(1.4, 1, p));
+    const ng = L.createLinearGradient(0, -ns / 2, 0, ns / 2);
+    ng.addColorStop(0, '#FFE680'); ng.addColorStop(1, '#F5CF4A');
+    L.fillStyle = ng; L.fillRect(-ns / 2, -ns / 2, ns, ns);
+    L.fillStyle = 'rgba(255,255,255,0.35)'; L.fillRect(-ns * 0.18, -ns / 2 - ns * 0.05, ns * 0.36, ns * 0.12);
+    L.fillStyle = '#2B2014';
+    const f1 = font('serifIt', ns * 0.16), f2 = font('serifIt', ns * 0.115);
+    L.font = f1; L.fillText('it’s 1 AM.', -ns * 0.4, -ns * 0.18);
+    L.fillText('please.', -ns * 0.4, ns * 0.02);
+    L.font = f2; L.fillText('(also… what song', -ns * 0.4, ns * 0.22); L.fillText('is this?)', -ns * 0.4, ns * 0.36);
+    L.restore();
+  }
 }
 
 // ---------------------------------------------------------------------------
 
 export function fastImpulses() {
-  const list = T.lines.slice(1).map((t0) => [t0, 0.45, 11, 9]);
-  list.push([T.climaxWords[0], 0.35, 12, 10], [T.climaxWords[1], 0.35, 12, 10], [T.climaxWords[2], 0.35, 12, 10], [T.climaxWords[3], 1.3, 8, 6]);
+  const list = T.lines.slice(1).map((t0) => [t0, 0.4, 11, 9]);
+  const [w1, w2, w3, w4] = T.climaxWords;
+  list.push([w1, 0.35, 12, 10], [w2, 0.35, 12, 10], [w3, 0.35, 12, 10], [w4, 1.3, 8, 6], [T.lines[4] + 0.9, 0.25, 10, 10]);
   return list;
 }
 
 export function drawFast(K, t, post) {
-  const { L, W, H } = K;
+  const { W, H } = K;
   if (t >= T.climax) {
     if (t < T.endHit + 0.02) sceneClimax(K, t, post);
     drawHUD(K, t, 5, C.cream);
     return;
   }
-  const i = clamp(Math.floor((t - T.drop) / 1.0), 0, 4);
+  const i = lineAt(t);
   const lt = t - T.lines[i];
-  const ex = seg(lt, 0.86, 1.0);
-  const live = K.samples <= 1;
-  if (i === 0) {
-    const P0 = ex > 0 ? scenePoemZoomPoint(K) : null;
+  if (i === 0) scenePoem(K, lt, t);
+  else if (i === 1) sceneSong(K, lt, t);
+  else if (i === 2) sceneStory(K, lt, t);
+  else if (i === 3) {
+    const ex = seg(lt, 2.16, 2.4);
     if (ex > 0) {
+      // fly into "someone put this on a stage" until the screen is red
+      const me = sceneJoke(K, 2.16, T.lines[3] + 2.16, false);
+      K.L.fillStyle = '#0B0D11'; K.L.fillRect(0, 0, W, H);
+      if (me) {
+        const k = ease.inExpo(ex);
+        const P = [me.x + me.w / 2, me.y + me.h / 2];
+        setView(K, zoomM(P, [lerp(P[0], W / 2, k), lerp(P[1], H / 2, k)], Math.exp(k * Math.log(45))));
+        sceneJoke(K, 2.16, T.lines[3] + 2.16, false);
+        setView(K, IDENT);
+      }
+    } else sceneJoke(K, lt, t);
+  } else {
+    const ex = seg(lt, 2.14, 2.4);
+    const muffle = 1 - seg(lt, 0.18, 0.3);
+    if (ex > 0) {
+      K.L.fillStyle = C.ink; K.L.fillRect(0, 0, W, H);
+      const { cx, cy } = mixRecord(K);
+      const P = [cx, cy];
       const k = ease.inExpo(clamp(ex / 0.9));
-      setView(K, zoomM(P0, [lerp(P0[0], W / 2, k), lerp(P0[1], H / 2, k)], Math.exp(k * Math.log(90))));
+      setView(K, zoomM(P, [lerp(P[0], W / 2, k), lerp(P[1], H / 2, k)], Math.exp(k * Math.log(60))));
     }
-    scenePoem(K, lt, t);
+    sceneMix(K, lt, t);
     setView(K, IDENT);
-  } else if (i === 1) {
-    if (ex > 0) {
-      L.fillStyle = C.night;
-      L.fillRect(0, 0, W, H);
-      const sy = ex < 0.6 ? lerp(1, 0.006, ease.inCubic(ex / 0.6)) : 0.006;
-      const sx = ex < 0.6 ? 1 + 0.04 * ex : lerp(1.02, 0, ease.inQuart((ex - 0.6) / 0.4));
-      setView(K, [sx, 0, 0, sy, W / 2 * (1 - sx), H / 2 * (1 - sy)]);
-    }
-    sceneSong(K, lt, t);
-    if (ex > 0) {
-      L.fillStyle = `rgba(255,255,255,${0.85 * ex})`;
-      L.fillRect(0, 0, W, H);
-      setView(K, IDENT);
-      K.G.globalAlpha = Math.sin(Math.PI * ex);
-      K.G.fillStyle = '#FFFFFF';
-      const lwid = ex < 0.6 ? W : W * (1 - ease.inQuart((ex - 0.6) / 0.4));
-      K.G.fillRect(W / 2 - lwid / 2, H / 2 - 2, lwid, 4);
-      K.G.globalAlpha = 1;
-    }
-    setView(K, IDENT);
-  } else if (i === 2) {
-    if (ex > 0) {
-      L.fillStyle = C.ink;
-      L.fillRect(0, 0, W, H);
-      const k = ease.inCubic(ex);
-      setView(K, [1, 0, 0, 1, 0, -k * H * 1.05]);
-      if (live) post.dirBlur = [0, 0.09 * Math.sin(Math.PI * ex)];
-    }
-    sceneStory(K, lt, t);
-    setView(K, IDENT);
-  } else if (i === 3) {
-    sceneJoke(K, lt, t);
-    if (lt > 0.8) {
-      // the red LMAOOO bubble floods the screen
-      const b = BUBBLES[3];
-      const g = bubbleGeom(K, b);
-      const k = ease.inExpo(seg(lt, 0.8, 0.97));
-      const s = 1 + k * 60;
-      const cxB = g.bx + g.bw * 0.5, cyB = g.by + g.bh * 0.5;
-      setView(K, zoomM([cxB, cyB], [lerp(cxB, W / 2, k), lerp(cyB, H / 2, k)], s));
-      drawBubble(K, b, 1);
-      setView(K, IDENT);
-    }
-  } else if (i === 4) {
-    if (ex > 0) {
-      L.fillStyle = C.ink;
-      L.fillRect(0, 0, W, H);
-    }
-    const muffle = 1 - seg(lt, 0.16, 0.28);
-    const rec = mixRecord(K);
-    const P = H > W ? [rec.cx - rec.R * 0.62, rec.cy - rec.R * 0.1] : [rec.cx - rec.R * 0.3, rec.cy + rec.R * 0.55];
-    if (ex > 0) {
-      const k = ease.inExpo(clamp(ex / 0.9));
-      setView(K, zoomM(P, [lerp(P[0], W / 2, k), lerp(P[1], H / 2, k)], Math.exp(k * Math.log(40))));
-    }
-    if (muffle > 0.01) {
-      // heard through the neighbour's wall: soft and dim, then the filter opens
-      K.S.save(); K.S.globalAlpha = muffle; sceneMix(K, lt, t, K.S); K.S.restore();
-      if (muffle < 0.99) { L.save(); L.globalAlpha = 1 - muffle; sceneMix(K, lt, t, L); L.restore(); }
-      post.sceneGain = 1;
-      post.exposure *= lerp(1, 0.55, muffle);
-    } else sceneMix(K, lt, t, L);
-    setView(K, IDENT);
+    if (muffle > 0.01) post.exposure *= lerp(1, 0.6, muffle);
   }
-  drawHUD(K, t, i, SCHEME[i].hud, ex > 0 && i === 1 ? 1 - ex : 1);
-}
-
-function scenePoemZoomPoint(K) {
-  const { L, W } = K;
-  const lay0 = blockLayout(K, 'POEM');
-  const f = font('mona', lay0.size, 900, lay0.wdth);
-  const lw = layout(L, 'POEM', f);
-  const x0 = (W - lw.width) / 2;
-  const o = lw.chars[1];
-  return [x0 + o.x + o.w * 0.15, lay0.baseline - lay0.capPx * 0.5];
+  const hudColor = i === 1 ? '#10403F' : i === 2 && lt > 0.9 ? '#1C1209' : C.cream;
+  drawHUD(K, t, i, hudColor, i === 1 ? 1 - seg(lt, 2.26, 2.34) : 1);
 }

@@ -4,29 +4,30 @@ export const EVENT = {
   host: 'SHADES',
   title: 'OPEN MIC',
   day: 'SAT',
+  dayLong: 'SATURDAY',
   date: '24 OCT 2026',
   dateShort: '24.10.26',
   venue: 'Boat Club Bistro',
   city: 'Roorkee',
-  coords: '29.87°N 77.89°E',
-  roles: ['Poets', 'Musicians', 'Storytellers', 'Stand-up', 'DJs'],
+  roles: ['Poets', 'Musicians', 'Storytellers', 'Stand-up comics', 'DJs'],
 };
 
+// Segments: [text, style] with style r = roman, i = italic accent, d = red full stop.
 export const COPY = {
-  intro: [
-    { pre: 'The river ', verb: 'hums', post: '.' },
-    { pre: 'The wind ', verb: 'recites', post: '.' },
-    { pre: 'The leaves ', verb: 'applaud', post: '.' },
+  nature: [
+    [[['The river never ', 'r'], ['rehearses', 'i'], ['.', 'd']]],
+    [[['The monsoon never asks', 'r']], [['if it’s too ', 'r'], ['loud', 'i'], ['.', 'd']]],
+    [[['Fireflies don’t check', 'r']], [['who’s ', 'r'], ['watching', 'i'], ['.', 'd']]],
+    [[['Nothing out here', 'r']], [['waits to be ', 'r'], ['ready', 'i'], ['.', 'd']]],
   ],
-  turn: ['Your', 'turn.'],
+  why: [['So why do ', 'r'], ['you', 'i'], ['?', 'd']],
   lines: [
     { key: 'POEM', tail: 'still in your notes app.', label: 'POETS' },
     { key: 'SONG', tail: 'only your shower has heard.', label: 'MUSICIANS' },
-    { key: 'STORY', tail: 'you only tell at 2 AM.', label: 'STORYTELLERS' },
+    { key: 'STORY', tail: 'you only tell at *2 AM*.', label: 'STORYTELLERS' },
     { key: 'JOKE', tail: 'your group chat still quotes.', label: 'STAND-UP' },
     { key: 'MIX', tail: 'your neighbours know by heart.', label: 'DJs' },
   ],
-  climax: ['GIVE', 'IT', 'A', 'MIC'],
 };
 
 export const C = {
@@ -42,27 +43,33 @@ export const C = {
   white: '#FFFFFF',
 };
 
-export const BPM = 120;
+export const BPM = 100;
 export const BEAT = 60 / BPM;
+export const BAR = BEAT * 4;
 
 // Master cue sheet (seconds).
 export const T = {
-  duration: 16.5,
+  duration: 36.5,
+  // nature: river (golden hour) -> monsoon -> night forest -> dawn (time-lapse)
+  shots: [0, 2.6, 5.2, 7.8],
   dropFall: 0.06,
   impact: 0.34,
-  introIn: [0.78, 2.06, 3.32],
-  introOut: [1.84, 3.08, 4.20],
-  leaves: [3.0, 4.95],
-  push: [4.28, 5.22],
-  turn: 4.80,
-  taps: [5.08, 5.28],
-  drop: 5.5,
-  lines: [5.5, 6.5, 7.5, 8.5, 9.5],
-  climax: 10.5,
-  climaxWords: [10.5, 10.625, 10.75, 11.0],
-  endHit: 12.0,
-  endLock: 12.62,
-  fadeOut: [15.95, 16.5],
+  textIn: [0.85, 2.95, 5.6, 8.2],
+  textOut: [2.3, 4.85, 7.45, 10.0],
+  lightning: [3.72, 4.62],
+  sync: 6.75, // fireflies flash together
+  dawn: [7.4, 8.7],
+  push: [10.25, 11.25],
+  why: 10.5,
+  taps: [11.3, 11.55],
+  drop: 12.0,
+  lines: [12.0, 14.4, 16.8, 19.2, 21.6],
+  climax: 24.0,
+  climaxWords: [24.0, 24.3, 24.6, 24.9],
+  endHit: 26.4,
+  // end cards: logo, title, roles, date, venue, lockup
+  end: [26.4, 28.0, 29.6, 31.2, 32.6, 34.0],
+  fadeOut: [35.9, 36.5],
 };
 
 export const beatTime = (b) => T.drop + b * BEAT;

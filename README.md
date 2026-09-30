@@ -1,6 +1,6 @@
 # SHADES — Open Mic · Trailer
 
-A 16.5-second trailer for the **SHADES Open Mic** (poets, musicians,
+A 36.5-second trailer for the **SHADES Open Mic** (poets, musicians,
 storytellers, stand-up comics and DJs) — **Saturday 24 October 2026, Boat
 Club Bistro, Roorkee**.
 
@@ -14,7 +14,7 @@ with the Web Audio API (no samples, no TTS, no stock assets).
 
 | File | What it is |
 | --- | --- |
-| `release/SHADES-OpenMic-Trailer-1080p60.mp4` | 1920×1080, 60 fps, H.264 High + AAC 320k, −14 LUFS / −1.4 dBTP (YouTube, LinkedIn, screens at the venue) |
+| `release/SHADES-OpenMic-Trailer-1080p60.mp4` | 1920×1080, 60 fps, H.264 High + AAC 320k, −14 LUFS (YouTube, LinkedIn, screens at the venue) |
 | `release/SHADES-OpenMic-Trailer-1080p30.mp4` | Same cut at 30 fps (frame-blended) for platforms that prefer it |
 | `release/SHADES-OpenMic-Trailer-1080x1920-30.mp4` | Vertical 9:16 cut, 30 fps (Instagram Reels / Stories, WhatsApp status) |
 | `dist/SHADES-OpenMic-Trailer.html` | Single self-contained file — double-click to play the live, real-time version |
@@ -24,14 +24,21 @@ Live controls: **Space** play/pause · **←/→** seek · **R** restart · **F*
 fullscreen. Add `?portrait` to the URL for the 9:16 frame. Without WebGL2 the
 page falls back to playing the rendered MP4.
 
-## Structure of the piece
+## The idea
 
-| Time | Section | Idea |
-| --- | --- | --- |
-| 0.0–5.5 s | Nature performs | A droplet lands on the river at golden hour; the camera rises to the Himalayan horizon. *The river hums. The wind recites. The leaves applaud.* Rustling leaves turn into an audience clapping, the sun becomes the SHADES disc: *Your turn.* Two mic taps. |
-| 5.5–10.5 s | The things you keep to yourself | 120 BPM kinetic type. *that POEM still in your notes app · that SONG only your shower has heard · that STORY you only tell at 2 AM · that JOKE your group chat still quotes · that MIX your neighbours know by heart.* |
-| 10.5–12.0 s | Climax | **GIVE IT A MIC.** — the red full stop becomes the logo. |
-| 12.0–16.5 s | Lockup | The SHADES disc hangs over the night river; event details build beneath it. |
+Nature makes things without asking permission. People hide theirs. The film
+answers that, then tells you where to bring yours.
+
+| Time | Section |
+| --- | --- |
+| 0–2.6 s | River at golden hour, a single droplet. *The river never rehearses.* |
+| 2.6–5.2 s | Monsoon: rain, wind-torn leaves, lightning, thunder. *The monsoon never asks if it’s too loud.* |
+| 5.2–7.4 s | Deodar forest at night; the fireflies fall silent, then flash together. *Fireflies don’t check who’s watching.* |
+| 7.4–10.3 s | Time-lapse to dawn, a koel, a starling murmuration. *Nothing out here waits to be ready.* |
+| 10.3–12 s | The camera pushes into the sun, which becomes the SHADES disc. *So why do you?* Two mic taps. |
+| 12–24 s | One bar (2.4 s) per line at 100 BPM: *that POEM still in your notes app* (a real-looking note, “i’m not really a poet” struck through) · *that SONG only your shower has heard* (written in the steam) · *that STORY you only tell at 2 AM* (the last lit window) · *that JOKE your group chat still quotes* (the hostel group) · *that MIX your neighbours know by heart* (and their sticky note). |
+| 24–26.4 s | **GIVE IT A MIC.** — the full stop becomes the logo. |
+| 26.4–36.5 s | End cards, one idea each: SHADES presents → OPEN MIC → who it’s for → 24 OCT → Boat Club Bistro, Roorkee → lockup. |
 
 ## Run locally
 
@@ -72,11 +79,13 @@ fills the same frame.
 - `src/gfx/` — WebGL2 pipeline: landscape shader (sky, Himalayan ridges, water
   with droplet rings and sun glitter, the sun that becomes the brand disc),
   compositing, bloom, grade, grain, letterbox.
-- `src/scenes/` — `intro.js` (nature), `fast.js` (kinetic type), `end.js`
-  (lockup), `director.js` (timeline + post presets), `logo.js` (vector mark
-  traced from the supplied logo).
+- `src/scenes/` — `nature.js` (river, monsoon, forest, dawn), `fast.js` (the
+  five line scenes + climax), `kit.js` (shared kinetic-type helpers), `end.js`
+  (end cards), `fx.js` (glow and blur helpers), `director.js` (timeline + post
+  presets), `logo.js` (vector mark traced from the supplied logo).
 - `src/audio/` — `synth.js` (voices: drums, bass, supersaw, Karplus–Strong
-  santoor-like plucks, water, wind, birds, leaves→applause, mic taps, scratch…),
+  santoor-like plucks, tanpura drone, rain, thunder, crickets, koel, birds,
+  hummed vowels, knocks, mic taps, scratch…),
   `score.js` (arrangement locked to the cue sheet), `engine.js` (offline
   render, BS.1770 loudness normalisation, look-ahead limiter, WAV).
 - `tools/` — static server, frame/audio/video renderers, single-file build.

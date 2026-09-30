@@ -15,7 +15,7 @@ const W = Number(args.w || 1920), H = Number(args.h || 1080), FPS = Number(args.
 const DRAFT = !!args.draft;
 const WORKERS = Number(args.workers || 2);
 const NAME = args.name || `${W}x${H}_${FPS}${DRAFT ? '_draft' : ''}`;
-const DURATION = 16.5;
+const DURATION = Number(args.duration || 36.5);
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const frameDir = path.join(root, 'frames', NAME);
 const distDir = path.join(root, 'dist');
@@ -23,7 +23,7 @@ fs.mkdirSync(frameDir, { recursive: true });
 fs.mkdirSync(distDir, { recursive: true });
 
 // motion-blur samples per section (fast type needs the most)
-const samplesAt = (t) => (DRAFT ? 1 : t < 5.5 ? 3 : t < 12.0 ? 6 : 3);
+const samplesAt = (t) => (DRAFT ? 1 : t < 12.0 ? 3 : t < 26.4 ? 6 : 3);
 
 const CHROME = process.env.CHROME || '/usr/local/bin/google-chrome';
 const launch = () => puppeteer.launch({

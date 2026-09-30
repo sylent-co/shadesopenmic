@@ -43,6 +43,12 @@ uniform float uMarkSweep;
 uniform sampler2D uMarkTex;
 uniform float uCalm;
 uniform float uExposure;
+uniform float uStorm;      // overcast monsoon sky
+uniform float uRain;       // rain ripples on the water
+uniform float uLightning;  // sky flash
+uniform float uDawn;       // dawn palette instead of golden hour
+uniform float uMist;       // valley mist
+uniform float uSunVis;     // sun disc visibility
 
 float PX; // angular size of one pixel (radians)
 
@@ -84,11 +90,16 @@ vec3 skyGradient(float h, float azSun, float sunDot) {
   sky = mix(sky, C_MID, smoothstep(0.03, 0.15, h));
   sky = mix(sky, C_HIGH, smoothstep(0.12, 0.34, h));
   sky = mix(sky, C_ZEN, smoothstep(0.28, 0.85, h));
-  sky += lin(vec3(1.0, 0.56, 0.30)) * exp(-h * 14.0) * pow(azSun, 4.0) * 0.45;
-  sky += lin(vec3(1.0, 0.58, 0.32)) * (pow(sunDot, 8.0) * 0.16 + pow(sunDot, 60.0) * 0.32 + pow(sunDot, 600.0) * 0.75) * (1.0 - 0.85 * uBrand * (1.0 - uNight));
+  float sv = uSunVis * (1.0 - uStorm);
+  sky += mix(lin(vec3(1.0, 0.56, 0.30)), lin(vec3(1.0, 0.62, 0.52)), uDawn) * exp(-h * 14.0) * pow(azSun, 4.0) * 0.45 * sv;
+  sky += mix(lin(vec3(1.0, 0.58, 0.32)), lin(vec3(1.0, 0.72, 0.50)), uDawn) * (pow(sunDot, 8.0) * 0.16 + pow(sunDot, 60.0) * 0.32 + pow(sunDot, 600.0) * 0.75) * (1.0 - 0.85 * uBrand * (1.0 - uNight)) * sv;
+  vec3 ssky = mix(lin(vec3(0.40, 0.45, 0.50)), lin(vec3(0.20, 0.24, 0.29)), smoothstep(0.0, 0.22, h));
+  ssky = mix(ssky, lin(vec3(0.08, 0.10, 0.13)), smoothstep(0.18, 0.8, h));
+  ssky += lin(vec3(0.75, 0.82, 1.0)) * uLightning * (0.35 + 0.65 * smoothstep(0.0, 0.4, h));
+  sky = mix(sky, ssky, uStorm);
   vec3 nsky = mix(lin(vec3(0.045, 0.040, 0.085)), lin(vec3(0.020, 0.024, 0.062)), smoothstep(0.0, 0.10, h));
   nsky = mix(nsky, lin(vec3(0.006, 0.008, 0.024)), smoothstep(0.08, 0.60, h));
-  nsky += lin(vec3(0.95, 0.10, 0.04)) * (pow(sunDot, 14.0) * 0.025 + pow(sunDot, 160.0) * 0.10);
+  nsky += lin(vec3(0.95, 0.10, 0.04)) * (pow(sunDot, 14.0) * 0.025 + pow(sunDot, 160.0) * 0.10) * uBrand;
   return mix(sky, nsky, uNight);
 }
 
@@ -109,8 +120,17 @@ vec3 env(vec3 rd, bool reflected) {
     float dens = smoothstep(0.52, 0.80, n) * band;
     vec3 lit = mix(lin(vec3(0.42, 0.33, 0.50)), lin(vec3(1.0, 0.64, 0.42)), pow(azSun, 3.0) * smoothstep(0.35, 0.0, e));
     lit += lin(vec3(1.0, 0.72, 0.48)) * pow(sunDot, 30.0) * 1.2;
-    vec3 nlit = lin(vec3(0.07, 0.045, 0.07)) + lin(vec3(0.45, 0.05, 0.03)) * pow(sunDot, 10.0);
-    sky = mix(sky, mix(lit, nlit, uNight), dens * 0.7);
+    vec3 nlit = lin(vec3(0.05, 0.05, 0.08)) + lin(vec3(0.45, 0.05, 0.03)) * pow(sunDot, 40.0) * uBrand * 0.35;
+    sky = mix(sky, mix(lit, nlit, uNight), dens * 0.7 * (1.0 - uStorm));
+  }
+  if (uStorm > 0.0 && e > -0.02) {
+    vec2 cp = rd.xz / (max(e, 0.0) + 0.09) * 0.55 + vec2(uTime * 0.09, uTime * 0.02);
+    float n = fbm2(cp) * 0.65 + fbm2(cp * 2.7 + 5.0) * 0.35;
+    float dens = smoothstep(0.30, 0.72, n);
+    vec3 under = lin(vec3(0.10, 0.12, 0.15)), top = lin(vec3(0.36, 0.40, 0.46));
+    vec3 cc = mix(under, top, smoothstep(0.35, 0.95, n));
+    cc += lin(vec3(0.80, 0.86, 1.0)) * uLightning * (0.6 + 1.6 * dens);
+    sky = mix(sky, cc, dens * uStorm * smoothstep(-0.02, 0.03, e) * 0.92);
   }
 
   // stars
@@ -124,7 +144,7 @@ vec3 env(vec3 rd, bool reflected) {
       float tw = 0.65 + 0.35 * sin(uTime * (1.5 + hs * 6.0) + hs * 50.0);
       float st = smoothstep(0.16, 0.0, d) * (hs - 0.968) / 0.032 * tw;
       float vis = mix(smoothstep(0.26, 0.7, e) * 0.45, smoothstep(0.02, 0.2, e) * 1.2, uNight);
-      sky += vec3(1.0, 0.95, 0.9) * st * vis * 1.5;
+      sky += vec3(1.0, 0.95, 0.9) * st * vis * 1.5 * (1.0 - uStorm);
     }
   }
 
@@ -132,9 +152,9 @@ vec3 env(vec3 rd, bool reflected) {
   vec2 lp = sunLocal(rd);
   float dsun = length(lp);
   float pxs = PX / uSunRad * (reflected ? 2.0 : 1.0);
-  float disc = smoothstep(1.0 + pxs, 1.0 - pxs, dsun) * step(0.0, dot(rd, uSunDir));
+  float disc = smoothstep(1.0 + pxs, 1.0 - pxs, dsun) * step(0.0, dot(rd, uSunDir)) * uSunVis * (1.0 - uStorm);
   if (disc > 0.0) {
-    vec3 golden = lin(vec3(1.0, 0.62, 0.30)) * 2.6 * mix(1.0, 0.74, pow(dsun, 2.0));
+    vec3 golden = mix(lin(vec3(1.0, 0.62, 0.30)), lin(vec3(1.0, 0.74, 0.46)), uDawn) * 2.6 * mix(1.0, 0.74, pow(dsun, 2.0));
     golden = mix(golden, lin(vec3(1.0, 0.38, 0.15)) * 2.1, smoothstep(0.5, 1.0, dsun) * 0.65);
     vec3 brand = brandDisc(lp) * mix(1.12, 1.0, uNight);
     if (uMark > 0.0) {
@@ -157,7 +177,7 @@ vec3 env(vec3 rd, bool reflected) {
   float h0 = 0.014 + 0.12 * pow(ridge(a, 1.7, 3.0, 0.85), 1.8);
   float m0 = smoothstep(h0 + px, h0 - px, e);
   vec3 c0 = mix(sky, mix(lin(vec3(0.66, 0.50, 0.64)), lin(vec3(0.05, 0.035, 0.06)), uNight), 0.62);
-  c0 += mix(lin(vec3(1.0, 0.66, 0.55)), lin(vec3(0.5, 0.05, 0.02)), uNight) * 0.22 * smoothstep(h0 - 0.02, h0, e) * (0.35 + glowSide);
+  c0 += mix(lin(vec3(1.0, 0.66, 0.55)), lin(vec3(0.5, 0.05, 0.02)) * uBrand * 0.25, uNight) * 0.22 * smoothstep(h0 - 0.02, h0, e) * (0.35 + glowSide);
   c0 = mix(c0, hazeCol, exp(-(e - 0.01) * 60.0) * 0.35);
   sky = mix(sky, c0, m0 * 0.8);
 
@@ -165,25 +185,33 @@ vec3 env(vec3 rd, bool reflected) {
   float m1 = smoothstep(h1 + px, h1 - px, e);
   vec3 c1 = mix(mix(lin(vec3(0.47, 0.31, 0.45)), hazeCol, 0.35), lin(vec3(0.04, 0.028, 0.05)), uNight);
   c1 = mix(c1, hazeCol, exp(-(e - 0.004) * 90.0) * 0.5);
-  c1 += mix(lin(vec3(1.0, 0.6, 0.4)), lin(vec3(0.9, 0.1, 0.04)), uNight) * exp(-abs(h1 - e) / (px * 2.5 + 0.0015)) * 0.3 * glowSide;
+  c1 += mix(lin(vec3(1.0, 0.6, 0.4)), lin(vec3(0.9, 0.1, 0.04)) * uBrand * 0.25, uNight) * exp(-abs(h1 - e) / (px * 2.5 + 0.0015)) * 0.3 * glowSide;
   sky = mix(sky, c1, m1);
 
   float h2 = 0.004 + 0.032 * ridge(a, 4.8, 77.0, 0.15);
   float m2 = smoothstep(h2 + px, h2 - px, e);
   vec3 c2 = mix(lin(vec3(0.25, 0.15, 0.26)), lin(vec3(0.022, 0.016, 0.03)), uNight);
   c2 = mix(c2, hazeCol, exp(-(e - 0.002) * 140.0) * 0.45);
-  c2 += mix(lin(vec3(1.0, 0.55, 0.35)), lin(vec3(0.8, 0.08, 0.03)), uNight) * exp(-abs(h2 - e) / (px * 2.0 + 0.001)) * 0.28 * glowSide;
+  c2 += mix(lin(vec3(1.0, 0.55, 0.35)), lin(vec3(0.8, 0.08, 0.03)) * uBrand * 0.25, uNight) * exp(-abs(h2 - e) / (px * 2.0 + 0.001)) * 0.28 * glowSide;
   sky = mix(sky, c2, m2);
 
   float trees = pow(vnoise1(a * 140.0 + 5.0), 2.0) * 0.0045 + pow(vnoise1(a * 320.0), 3.0) * 0.002;
   float h3 = 0.001 + 0.008 * ridge(a, 9.0, 131.0, 0.0) + trees;
   float m3 = smoothstep(h3 + px, h3 - px, e);
   vec3 c3 = mix(lin(vec3(0.075, 0.05, 0.095)), lin(vec3(0.010, 0.008, 0.016)), uNight);
-  c3 += mix(lin(vec3(0.9, 0.45, 0.28)), lin(vec3(0.6, 0.05, 0.02)), uNight) * exp(-abs(h3 - e) / (px * 1.5 + 0.0006)) * 0.22 * glowSide;
+  c3 += mix(lin(vec3(0.9, 0.45, 0.28)), lin(vec3(0.6, 0.05, 0.02)) * uBrand * 0.25, uNight) * exp(-abs(h3 - e) / (px * 1.5 + 0.0006)) * 0.22 * glowSide;
   sky = mix(sky, c3, m3);
 
-  float mist = exp(-max(e, 0.0) * 260.0) * (0.3 + 0.25 * vnoise2(vec2(a * 30.0 + uTime * 0.05, 1.0)));
-  sky = mix(sky, hazeCol * 1.05, mist * (1.0 - uNight * 0.6));
+  if (uStorm > 0.0) {
+    float mAny = max(max(m0, m1), max(m2, m3));
+    sky = mix(sky, lin(vec3(0.21, 0.24, 0.28)) * (1.0 + 1.5 * uLightning), uStorm * mAny * 0.8);
+  }
+  float mist = exp(-max(e, 0.0) * mix(260.0, 70.0, uMist)) * (0.3 + 0.25 * vnoise2(vec2(a * 30.0 + uTime * 0.05, 1.0)) + 0.35 * uMist);
+  sky = mix(sky, mix(hazeCol * 1.05, mix(C_HOR, vec3(0.9), 0.3), uMist * (1.0 - uNight)), clamp(mist, 0.0, 1.0) * (1.0 - uNight * 0.6));
+  if (uStorm > 0.0) {
+    vec3 veil = mix(lin(vec3(0.34, 0.38, 0.43)), lin(vec3(0.72, 0.78, 0.95)), uLightning * 0.6);
+    sky = mix(sky, veil, uStorm * exp(-max(e, 0.0) * 16.0) * 0.82);
+  }
   return sky;
 }
 
@@ -205,7 +233,7 @@ vec3 waterNormal(vec2 p, float footprint, out float ringGlow) {
   }
   vec2 wdir = normalize(vec2(1.0, 0.35));
   float gust = smoothstep(0.35, 0.85, vnoise2(p * 0.22 - wdir * t * 0.9));
-  float windAmt = (0.25 + uWind * (0.6 + 1.4 * gust)) * calm;
+  float windAmt = (0.25 + uWind * (0.6 + 1.4 * gust)) * calm + uStorm * 0.8;
   vec2 q = p * 3.5 - wdir * t * 1.6;
   float e0 = 0.08;
   for (int o = 0; o < 2; o++) {
@@ -214,6 +242,23 @@ vec3 waterNormal(vec2 p, float footprint, out float ringGlow) {
     float n0 = vnoise2(q), nx = vnoise2(q + vec2(e0, 0.0)), nz = vnoise2(q + vec2(0.0, e0));
     g += vec2(nx - n0, nz - n0) / e0 * amp * 3.5;
     q = mat2(1.7, 1.1, -1.1, 1.7) * q + 3.1;
+  }
+  if (uRain > 0.0) {
+    for (int l = 0; l < 2; l++) {
+      float sc = l == 0 ? 2.2 : 3.7;
+      vec2 q2 = p * sc + float(l) * 7.3;
+      vec2 id = floor(q2), f = fract(q2);
+      float hs = hash12(id + float(l) * 13.1);
+      float per = 0.55 + 0.4 * hs;
+      float ph = fract(t / per + hs * 7.0);
+      vec2 c = hash22(id + 3.7) * 0.5 + 0.25;
+      vec2 d = f - c;
+      float r = length(d) + 1e-4;
+      float rr = ph * 0.42;
+      float k = 60.0;
+      float w = exp(-pow((r - rr) / 0.045, 2.0)) * (1.0 - ph) * (1.0 - ph);
+      g += d / r * cos((r - rr) * k) * w * 0.55 * uRain * gAmp(k * sc, footprint) / sc * 3.0;
+    }
   }
   ringGlow = 0.0;
   float age = t - uDrop.z;
@@ -240,11 +285,11 @@ vec3 waterNormal(vec2 p, float footprint, out float ringGlow) {
 }
 
 void main() {
-  C_HOR = lin(vec3(1.00, 0.76, 0.48));
-  C_LOW = lin(vec3(0.96, 0.56, 0.40));
-  C_MID = lin(vec3(0.55, 0.36, 0.50));
-  C_HIGH = lin(vec3(0.20, 0.21, 0.40));
-  C_ZEN = lin(vec3(0.05, 0.08, 0.19));
+  C_HOR = lin(mix(vec3(1.00, 0.76, 0.48), vec3(1.00, 0.80, 0.64), uDawn));
+  C_LOW = lin(mix(vec3(0.96, 0.56, 0.40), vec3(0.96, 0.64, 0.60), uDawn));
+  C_MID = lin(mix(vec3(0.55, 0.36, 0.50), vec3(0.62, 0.52, 0.68), uDawn));
+  C_HIGH = lin(mix(vec3(0.20, 0.21, 0.40), vec3(0.30, 0.37, 0.58), uDawn));
+  C_ZEN = lin(mix(vec3(0.05, 0.08, 0.19), vec3(0.11, 0.18, 0.36), uDawn));
   vec2 frag = gl_FragCoord.xy + uJitter;
   vec2 uv = (frag - 0.5 * uRes) / uRes.y;
   PX = 2.0 * uTanHalf / uRes.y;
@@ -263,8 +308,9 @@ void main() {
     vec3 refl = env(rr, true);
     float sd = max(dot(rr, uSunDir), 0.0);
     vec3 sunCol = mix(lin(vec3(1.0, 0.66, 0.40)), lin(vec3(1.0, 0.16, 0.06)), max(uBrand, uNight));
-    float glint = (pow(sd, 900.0) * 14.0 + pow(sd, 160.0) * 0.8) * exp(-footprint * 1.5);
+    float glint = (pow(sd, 900.0) * 14.0 + pow(sd, 160.0) * 0.8) * exp(-footprint * 1.5) * uSunVis * (1.0 - uStorm) * step(0.0, uSunDir.y);
     vec3 body = mix(lin(vec3(0.030, 0.034, 0.068)), lin(vec3(0.005, 0.005, 0.011)), uNight);
+    body = mix(body, lin(vec3(0.05, 0.06, 0.07)), uStorm);
     col = mix(body, refl, fres) + sunCol * glint * fres;
     col += lin(vec3(1.0, 0.82, 0.55)) * ringGlow * 3.0;
     float haze = 1.0 - exp(-tHit * 0.004);
