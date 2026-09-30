@@ -690,10 +690,13 @@ function drawNatureLine(K, t, idx) {
   if (t < tIn - 0.05 || t > tOut + 0.8) return;
   const { glyphs, count } = lineGlyphs(K, idx);
   const thunder = idx === 1 ? wobble(t - (T.lightning[0] + 0.06), 9, 5) : 0;
+  const lineStart = [];
+  for (const g of glyphs) if (lineStart[g.line] === undefined) lineStart[g.line] = g.idx;
   for (const g of glyphs) {
     if (g.ch === ' ') continue;
     const i = g.idx;
-    const pin = ease.outCubic(clamp((t - tIn - i * 0.022) / 0.7));
+    // stagger within each line; the second line follows shortly after the first
+    const pin = ease.outCubic(clamp((t - tIn - g.line * 0.28 - (i - lineStart[g.line]) * 0.018) / 0.55));
     let order = count - 1 - i;
     if (idx === 1 || idx === 2) order = Math.floor(hash1(i * 3.7 + idx * 11) * count);
     const q = ease.inCubic(clamp((t - tOut - order * 0.009) / 0.42));
@@ -732,7 +735,7 @@ function drawNatureLine(K, t, idx) {
         const rise = ease.outCubic(clamp((t - tIn - 0.35 - (i % 5) * 0.05) / 0.8));
         dy += (1 - rise) * 0.05 * H;
         const s = 0.07 * H;
-        G.globalAlpha = 0.35 * pin * (1 - q);
+        G.globalAlpha = 0.08 * pin * (1 - q);
         G.drawImage(glowDot(64, [255, 170, 110]), g.cx - s, g.y - s * 1.1, 2 * s, 2 * s);
         G.globalAlpha = 1;
       }
@@ -742,7 +745,8 @@ function drawNatureLine(K, t, idx) {
       rot = q * (h1 - 0.3) * 0.5;
     }
     const alpha = Math.pow(pin, 1.3) * (1 - q);
-    blurGlyph(K, g, g.cx + dx, g.y + dy, rot, alpha, blur, g.color, g.font, halo, sc, idx === 3 ? 0.9 : 0.5);
+    const color = idx === 3 && accent ? '#FFF4E6' : g.color;
+    blurGlyph(K, g, g.cx + dx, g.y + dy, rot, alpha, blur, color, g.font, idx === 3 ? 0.05 : halo, sc, idx === 3 ? 1.0 : 0.5);
   }
 }
 
