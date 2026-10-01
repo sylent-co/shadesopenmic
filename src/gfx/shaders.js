@@ -315,7 +315,8 @@ void main() {
     col += lin(vec3(1.0, 0.82, 0.55)) * ringGlow * 3.0;
     float haze = 1.0 - exp(-tHit * 0.004);
     vec2 hz = rd.xz / max(length(rd.xz), 1e-4);
-    vec3 hc = skyGradient(0.0, max(dot(hz, normalize(uSunDir.xz)), 0.0), max(dot(normalize(vec3(rd.x, 0.0, rd.z)), uSunDir), 0.0));
+    // hz is already guarded against the nadir (rd.xz == 0), where normalize() would give NaN
+    vec3 hc = skyGradient(0.0, max(dot(hz, normalize(uSunDir.xz)), 0.0), max(dot(vec3(hz.x, 0.0, hz.y), uSunDir), 0.0));
     col = mix(col, hc, haze * 0.3);
   } else {
     col = env(rd, false);
@@ -353,6 +354,7 @@ vec3 s2l(vec3 c) { return pow(max(c, 0.0), vec3(2.2)); }
 
 vec3 fetch(vec2 uv) {
   vec3 s = texture(uScene, uv).rgb * uSceneGain;
+  s = (any(isnan(s)) || any(isinf(s))) ? vec3(0.0) : s;
   vec4 so = texture(uSoft, uv);
   s = s * (1.0 - so.a) + s2l(so.rgb / max(so.a, 1e-4)) * so.a;
   vec4 l = texture(uLayer, uv);
@@ -395,6 +397,11 @@ void main() {
   vec3 b = texture(uSrc, vUv + uTexel * vec2(1.0, -1.0)).rgb;
   vec3 c = texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).rgb;
   vec3 d = texture(uSrc, vUv + uTexel * vec2(1.0, 1.0)).rgb;
+  // a single NaN/Inf texel would smear into a block through the mip chain
+  a = (any(isnan(a)) || any(isinf(a))) ? vec3(0.0) : a;
+  b = (any(isnan(b)) || any(isinf(b))) ? vec3(0.0) : b;
+  c = (any(isnan(c)) || any(isinf(c))) ? vec3(0.0) : c;
+  d = (any(isnan(d)) || any(isinf(d))) ? vec3(0.0) : d;
   float wa = 1.0 / (1.0 + max(a.r, max(a.g, a.b)));
   float wb = 1.0 / (1.0 + max(b.r, max(b.g, b.b)));
   float wc = 1.0 / (1.0 + max(c.r, max(c.g, c.b)));
