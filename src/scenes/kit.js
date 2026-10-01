@@ -1,19 +1,44 @@
 // Shared kit for the kinetic-type section: view transforms, word fitting,
 // tails, HUD, seven-segment digits, vinyl and the climax.
 
-import { T, COPY, C, BEAT, EVENT } from '../config.js';
+import { T, COPY, C, BEAT, EVENT, grooveHits } from '../config.js';
 import { clamp, lerp, seg, ease, hash1, mulberry32, TAU } from '../core/math.js';
 import { font } from '../core/fonts.js';
 import { metrics, textWidth } from './text.js';
-import { brandDiscCanvas } from './logo.js';
+import { brandDiscCanvas, boatClubLabelCanvas } from './logo.js';
 import { glowDot } from './fx.js';
 
 export const IDENT = [1, 0, 0, 1, 0, 0];
-export function setView(K, m) {
+/** a ∘ b: apply b, then a. */
+export const mulM = (a, b) => [
+  a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1],
+  a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
+  a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5],
+];
+// Base camera applied under every scene view (drift, whip-pans).
+let BASE = IDENT;
+export const setBase = (m) => { BASE = m; };
+/** Scale s and rotate r about (cx, cy), then translate by (ox, oy). */
+export const orbitM = (cx, cy, s, r, ox = 0, oy = 0) => {
+  const c = Math.cos(r) * s, n = Math.sin(r) * s;
+  return [c, n, -n, c, cx - c * cx + n * cy + ox, cy - n * cx - c * cy + oy];
+};
+export function setView(K, m0) {
+  const m = mulM(BASE, m0);
   K.L.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
   K.G.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
   K.S.setTransform(m[0] * 0.5, m[1] * 0.5, m[2] * 0.5, m[3] * 0.5, m[4] * 0.5, m[5] * 0.5);
 }
+
+const KICKS = grooveHits('kick');
+const SNARES = grooveHits('snare');
+const hitEnv = (list, t, decay) => {
+  let v = 0;
+  for (const h of list) { const a = t - h; if (a >= 0 && a < 1) v = Math.max(v, Math.exp(-a * decay)); }
+  return v;
+};
+export const kickEnv = (t, decay = 16) => hitEnv(KICKS, t, decay);
+export const snareEnv = (t, decay = 14) => hitEnv(SNARES, t, decay);
 /** Matrix scaling by s about P while moving P to Q. */
 export const zoomM = (P, Q, s) => [s, 0, 0, s, Q[0] - s * P[0], Q[1] - s * P[1]];
 
@@ -161,9 +186,10 @@ export function sevenSeg(ctx, digit, x, y, h, color) {
 }
 
 
-let vinyl = null;
-export function vinylCanvas(R) {
-  if (vinyl && vinyl.R === R) return vinyl;
+const vinyls = new Map();
+export function vinylCanvas(R, label = 'shades') {
+  const key = R + label;
+  if (vinyls.has(key)) return vinyls.get(key);
   const c = document.createElement('canvas');
   c.width = c.height = Math.ceil(R * 2);
   const x = c.getContext('2d');
@@ -179,12 +205,13 @@ export function vinylCanvas(R) {
   x.strokeStyle = 'rgba(255,255,255,0.12)';
   x.lineWidth = R * 0.006;
   for (const rr of [0.52, 0.68, 0.84]) { x.beginPath(); x.arc(0, 0, R * rr, 0, TAU); x.stroke(); }
-  const lab = brandDiscCanvas(512, true);
+  const lab = label === 'bcb' ? boatClubLabelCanvas(512) : brandDiscCanvas(512, true);
   x.drawImage(lab, -R * 0.34, -R * 0.34, R * 0.68, R * 0.68);
   x.fillStyle = '#0B0A0B';
   x.beginPath(); x.arc(0, 0, R * 0.018, 0, TAU); x.fill();
-  vinyl = { c, R };
-  return vinyl;
+  const v = { c, R };
+  vinyls.set(key, v);
+  return v;
 }
 
 

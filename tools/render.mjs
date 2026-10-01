@@ -9,13 +9,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { startServer } from './serve.mjs';
+import { T } from '../src/config.js';
 
 const args = Object.fromEntries(process.argv.slice(2).map((a) => { const m = a.match(/^--([\w-]+)(?:=(.*))?$/); return m ? [m[1], m[2] ?? true] : [a, true]; }));
 const W = Number(args.w || 1920), H = Number(args.h || 1080), FPS = Number(args.fps || 60);
 const DRAFT = !!args.draft;
 const WORKERS = Number(args.workers || 2);
 const NAME = args.name || `${W}x${H}_${FPS}${DRAFT ? '_draft' : ''}`;
-const DURATION = Number(args.duration || 36.5);
+const DURATION = Number(args.duration || T.duration);
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const frameDir = path.join(root, 'frames', NAME);
 const distDir = path.join(root, 'dist');
@@ -23,7 +24,7 @@ fs.mkdirSync(frameDir, { recursive: true });
 fs.mkdirSync(distDir, { recursive: true });
 
 // motion-blur samples per section (fast type needs the most)
-const samplesAt = (t) => (DRAFT ? 1 : t < 12.0 ? 3 : t < 26.4 ? 6 : 3);
+const samplesAt = (t) => (DRAFT ? 1 : t < T.drop ? 3 : t < T.endHit ? 6 : 3);
 
 const CHROME = process.env.CHROME || '/usr/local/bin/google-chrome';
 const launch = () => puppeteer.launch({

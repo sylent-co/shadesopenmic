@@ -1,10 +1,11 @@
 // Routes time to scenes and mixes post-processing presets.
 
-import { T } from '../config.js';
+import { T, BEAT, endDesignTime } from '../config.js';
 import { lerp, seg, ease, wobble } from '../core/math.js';
 import { natureCamera, natureScene, drawNature, shotAt, lightning } from './nature.js';
 import { drawFast, fastImpulses } from './fast.js';
 import { endCamera, endScene, drawEnd } from './end.js';
+import { kickEnv, snareEnv } from './kit.js';
 
 const PRESETS = {
   river: { bloom: 0.62, bloomThreshold: 0.85, warm: 0.65, sat: 1.06, contrast: 1.05, vignette: 0.55, grain: 0.034, halation: 0.10, ca: 0.0016, glowGain: 2.4 },
@@ -41,6 +42,19 @@ function impulses(t) {
   return { sx, sy, rot, zoom, ca };
 }
 
+// Opening drum hits (beats from impact), mirrored from the score so the
+// picture punches with the music before the drop.
+const NATURE_HITS = [
+  ...[1, 2, 3].map((b) => [b, 0.35]),
+  ...[4, 5, 6, 7].map((b) => [b, 1]),
+  ...[12, 12.5, 13, 13.5, 14, 14.5].map((b) => [b, 0.5 + (b - 12) * 0.25]),
+].map(([b, s]) => [T.impact + b * BEAT, s]);
+function natureKick(t) {
+  let v = 0;
+  for (const [h, s] of NATURE_HITS) { const a = t - h; if (a >= 0 && a < 0.6) v = Math.max(v, s * Math.exp(-a * 14)); }
+  return v;
+}
+
 function naturePreset(t) {
   const s = shotAt(t);
   if (s === 0) return { ...PRESETS.river };
@@ -58,6 +72,15 @@ export function frameState(t, portrait = false) {
   post.shakeRot = imp.rot;
   post.zoom = 1 + imp.zoom;
   post.ca += imp.ca;
+  if (t < T.push[0]) {
+    post.zoom *= 1 + 0.012 * natureKick(t);
+    post.ca += 0.003 * natureKick(t);
+  }
+  if (t >= T.drop && t < T.climax) {
+    // the picture punches with the kick and fringes on the snare
+    post.zoom *= 1 + 0.013 * kickEnv(t, 18);
+    post.ca += 0.005 * snareEnv(t, 16);
+  }
   post.exposure = 1;
   post.layerGain = 1;
   post.sceneGain = 1;
@@ -84,9 +107,10 @@ export function composeFrame(t, K) {
   }
   if (t >= T.drop - 0.001 && t < T.endHit + 0.3) drawFast(K, t, post);
   if (t >= T.endHit - 0.02) {
-    const cam = endCamera(t, portrait);
-    scene = endScene(t, cam);
-    drawEnd(K, t, cam, post);
+    const td = endDesignTime(t);
+    const cam = endCamera(td, portrait);
+    scene = endScene(td, cam);
+    drawEnd(K, td, cam, post);
   }
   return { scene: scene && { ...SCENE_DEFAULTS, ...scene }, post };
 }

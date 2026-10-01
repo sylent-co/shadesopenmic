@@ -1,12 +1,33 @@
 // SHADES logo: vector mark (traced from the supplied artwork, circle radius 1,
 // y down) plus a brand-disc renderer matching the shader colour model.
 import MARK_PATH from './markPath.js';
+import BCB_PATH from './boatclubPath.js';
+
+const cache = new Map();
+
+/** Boat Club Bistro record label: tan disc, green emblem (traced from their logo). */
+export function boatClubLabelCanvas(size = 512) {
+  const key = 'bcb:' + size;
+  if (cache.has(key)) return cache.get(key);
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const x = c.getContext('2d');
+  const R = size / 2;
+  x.fillStyle = '#DDB788';
+  x.beginPath(); x.arc(R, R, R, 0, Math.PI * 2); x.fill();
+  x.strokeStyle = 'rgba(30,60,48,0.35)'; x.lineWidth = size * 0.012;
+  x.beginPath(); x.arc(R, R, R * 0.94, 0, Math.PI * 2); x.stroke();
+  x.save(); x.translate(R, R); x.scale(R * 0.72, R * 0.72);
+  x.fillStyle = '#1E3C30'; x.fill(new Path2D(BCB_PATH), 'evenodd');
+  x.restore();
+  cache.set(key, c);
+  return c;
+}
 
 let markPath2D = null;
 export const markPath = () => (markPath2D ||= new Path2D(MARK_PATH));
 export const MARK_D = MARK_PATH;
 
-const cache = new Map();
 
 /** Brand disc (with optional mark) rendered per-pixel into a canvas of `size`. */
 export function brandDiscCanvas(size, withMark = true) {

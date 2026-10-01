@@ -22,7 +22,7 @@ export const shotAt = (t) => (t < T.shots[1] ? 0 : t < T.shots[2] ? 1 : 2);
 
 // ---- sun ----------------------------------------------------------------
 const SUN1 = { az: 0, el: 0.14 };
-const dawnSunEl = (t) => lerp(-0.1, 0.14, ease.outCubic(invLerp(T.dawn[0], 10.2, t)));
+const dawnSunEl = (t) => lerp(-0.1, 0.14, ease.outCubic(invLerp(T.dawn[0], T.push[0] + 0.3, t)));
 export function sunDir(t) {
   const s = shotAt(t);
   if (s === 0) return dirFromAngles(SUN1.az, SUN1.el);
@@ -36,19 +36,20 @@ export function natureCamera(t, portrait = false) {
   const s = shotAt(t);
   let yaw, pitch, roll, fov, pos, push = 0, tilt = 1;
   if (s === 0) {
-    tilt = smoother(invLerp(0.36, 2.2, t));
-    pitch = lerp(-1.12, 0.095, tilt) + seg(t, 2.2, 2.6, ease.inOutSine) * 0.006;
+    tilt = ease.inOutQuart(invLerp(T.impact + 0.02, T.impact + 1.35, t));
+    pitch = lerp(-1.12, 0.095, tilt) + seg(t, T.impact + 1.35, T.shots[1], ease.inOutSine) * 0.006;
     const yl = portrait ? -0.06 : -0.29;
-    yaw = lerp(yl + 0.06, yl, seg(t, 0.3, 2.6, ease.inOutSine));
+    yaw = lerp(yl + 0.09, yl, seg(t, T.impact, T.shots[1], ease.outCubic));
     roll = 0.006 * Math.sin(t * 1.2 + 0.4) + 0.003 * Math.sin(t * 2.3);
-    fov = lerp(53, 48, seg(t, 0.3, 2.6, ease.inOutSine));
+    fov = lerp(58, 47, seg(t, T.impact, T.shots[1], ease.outCubic));
     pos = [0, 1.0 + 0.012 * Math.sin(t * 1.05), 0.05 * t];
   } else if (s === 1) {
     const u = t - T.shots[1];
-    yaw = lerp(portrait ? 0.3 : 0.42, portrait ? 0.26 : 0.3, ease.inOutSine(clamp(u / 2.6)));
+    const d1 = T.shots[2] - T.shots[1];
+    yaw = lerp(portrait ? 0.3 : 0.42, portrait ? 0.26 : 0.3, ease.inOutSine(clamp(u / d1)));
     pitch = 0.07 + 0.006 * Math.sin(u * 1.7);
     roll = -0.012 + 0.006 * Math.sin(u * 2.1);
-    fov = lerp(60, 52, ease.inOutSine(clamp(u / 2.6)));
+    fov = lerp(62, 51, ease.outCubic(clamp(u / d1)));
     pos = [0, 0.55, 3 + 0.3 * u];
   } else {
     const u = t - T.shots[2];
@@ -95,28 +96,27 @@ export function natureScene(t, cam) {
   if (s === 0) {
     return {
       ...base,
-      uExposure: t < T.impact ? 0.0 : lerp(0.05, 1.0, seg(t, T.impact, 1.7, ease.outCubic)),
+      uExposure: t < T.impact ? 0.0 : lerp(0.12, 1.0, seg(t, T.impact, T.impact + 0.9, ease.outCubic)),
       uDrop: [0, 0.5, T.impact, 1],
-      uWind: 0.15 + smoothstep(1.6, 2.4, t) * 0.5,
-      uRain: smoothstep(2.35, 2.6, t) * 0.6,
+      uWind: 0.15 + smoothstep(T.shots[1] - 1.0, T.shots[1] - 0.2, t) * 0.5,
+      uRain: smoothstep(T.shots[1] - 0.3, T.shots[1], t) * 0.6,
     };
   }
   if (s === 1) {
     const L = lightning(t);
     return {
       ...base, uStorm: 1, uRain: 1, uWind: 1.2, uLightning: L * 0.3, uSunVis: 0,
-      uExposure: lerp(1, 0.0, seg(t, 5.0, 5.2, ease.inQuad)) * (1 + 0.2 * L),
+      uExposure: lerp(1, 0.0, seg(t, T.shots[2] - 0.12, T.shots[2], ease.inQuad)) * (1 + 0.2 * L),
     };
   }
   const dk = dawnK(t);
-  const push = cam.push;
   return {
     ...base,
     uNight: 1 - dk, uDawn: 1, uCalm: 1 - dk * 0.5, uMist: dk * 0.8, uWind: 0.1,
     uFocus: seg(t, T.push[0] + 0.04, T.push[1] - 0.3, ease.inOutQuad),
     uBrand: seg(t, T.push[0] + 0.12, T.push[1] - 0.32, ease.inOutQuad),
     uSunRad: SUN_RAD * (1 + 0.045 * tapPulse(t)),
-    uExposure: seg(t, T.shots[2], T.shots[2] + 0.45, ease.outCubic) * (1 - 0.0 * push),
+    uExposure: seg(t, T.shots[2], T.shots[2] + 0.3, ease.outCubic),
   };
 }
 
@@ -218,13 +218,13 @@ const REEDS = (() => {
 
 const BIRDS = Array.from({ length: 5 }, (_, i) => {
   const r = mulberry32(5100 + i);
-  return { t0: 1.3 + i * 0.1 + r() * 0.15, dur: 2.2 + r() * 0.5, y: 0.24 + r() * 0.06 + i * 0.013, s: 0.010 + r() * 0.005, ph: r() * TAU, dx: r() * 0.06 };
+  return { t0: 0.9 + i * 0.1 + r() * 0.15, dur: 2.0 + r() * 0.5, y: 0.24 + r() * 0.06 + i * 0.013, s: 0.010 + r() * 0.005, ph: r() * TAU, dx: r() * 0.06 };
 });
 
 const WIND = Array.from({ length: 18 }, (_, i) => {
   const r = mulberry32(4000 + i);
   return {
-    y: 0.16 + r() * 0.6, t0: 1.5 + r() * 0.9, dur: 1.0 + r() * 0.7, len: 0.28 + r() * 0.35,
+    y: 0.16 + r() * 0.6, t0: 1.1 + r() * 0.9, dur: 0.9 + r() * 0.6, len: 0.28 + r() * 0.35,
     a1: 0.012 + r() * 0.03, k1: 3 + r() * 5, p1: r() * TAU, a2: 0.006 + r() * 0.012, k2: 9 + r() * 10, p2: r() * TAU,
     w: 0.8 + r() * 1.8, alpha: 0.2 + r() * 0.35,
   };
@@ -242,7 +242,7 @@ const RAIN = [
 const STORM_LEAVES = Array.from({ length: 26 }, (_, i) => {
   const r = mulberry32(3300 + i);
   const z = 0.5 + r() * 1.8;
-  return { z, kind: Math.floor(r() * 3), ci: Math.floor(r() * 6), ts: 2.75 + r() * 2.0, dur: (0.8 + r() * 0.5) * Math.pow(z, 0.3), y0: 0.1 + r() * 0.8, amp: 0.04 + r() * 0.1, ph: r() * TAU, rot0: r() * TAU, spin: (r() - 0.5) * 9, flip0: r() * TAU, fs: 5 + r() * 8, fall: 0.15 + r() * 0.35 };
+  return { z, kind: Math.floor(r() * 3), ci: Math.floor(r() * 6), ts: T.shots[1] + 0.05 + r() * 1.7, dur: (0.8 + r() * 0.5) * Math.pow(z, 0.3), y0: 0.1 + r() * 0.8, amp: 0.04 + r() * 0.1, ph: r() * TAU, rot0: r() * TAU, spin: (r() - 0.5) * 9, flip0: r() * TAU, fs: 5 + r() * 8, fall: 0.15 + r() * 0.35 };
 }).sort((a, b) => b.z - a.z);
 
 function makeBolt(seed, x0, y0, x1, y1, depth = 6) {
@@ -631,8 +631,8 @@ function drawMoon(K, t, cam, fade) {
 }
 
 function flockPos(b, t, W, H, sunPx) {
-  const u = t - 7.9;
-  const cx = (0.12 + 0.34 * ease.inOutSine(clamp(u / 2.4)) + 0.04 * Math.sin(u * 1.7)) * W;
+  const u = t - T.flock;
+  const cx = (0.12 + 0.34 * ease.inOutSine(clamp(u / (T.push[0] + 0.4 - T.flock))) + 0.04 * Math.sin(u * 1.7)) * W;
   const cy = (0.24 + 0.05 * Math.sin(u * 1.2 + 0.5)) * H;
   const th = 0.5 * Math.sin(u * 0.8) + 0.25 * Math.sin(u * 1.9);
   const sx = 0.11 * W * (1 + 0.45 * Math.sin(u * 1.3));
@@ -654,7 +654,7 @@ function flockPos(b, t, W, H, sunPx) {
 
 function drawFlock(K, t, sunPx) {
   const { L, W, H } = K;
-  const on = smoothstep(7.9, 8.3, t);
+  const on = smoothstep(T.flock, T.flock + 0.35, t);
   if (on <= 0 || t > T.push[0] + 0.75) return;
   L.save();
   L.fillStyle = '#1B1022';
@@ -674,14 +674,15 @@ function drawFlock(K, t, sunPx) {
 function lineGlyphs(K, idx) {
   const { L, W, H } = K;
   const portrait = H > W;
-  const size = portrait ? 0.08 * W : 0.086 * H;
+  const size = portrait ? 0.095 * W : 0.104 * H;
   const lines = COPY.nature[idx];
   const m = metrics(L, 'serif');
   const lineGap = 1.16;
   const blockH = (lines.length - 1) * size * lineGap;
   const cy = (portrait ? 0.15 : 0.42) * H;
   const y0 = cy - blockH / 2 + (m.cap * size) / 2;
-  return richGlyphs(L, lines, size, { x0: portrait ? W / 2 : 0.105 * W, y0, align: portrait ? 'center' : 'left', lineGap });
+  const styles = idx === 0 ? { ...STYLE, i: { ...STYLE.i, k: 0.74 } } : STYLE;
+  return richGlyphs(L, lines, size, { x0: portrait ? W / 2 : 0.105 * W, y0, align: portrait ? 'center' : 'left', lineGap, styles });
 }
 
 function drawNatureLine(K, t, idx) {
@@ -692,6 +693,16 @@ function drawNatureLine(K, t, idx) {
   const thunder = idx === 1 ? wobble(t - (T.lightning[0] + 0.06), 9, 5) : 0;
   const lineStart = [];
   for (const g of glyphs) if (lineStart[g.line] === undefined) lineStart[g.line] = g.idx;
+  // accent word scales as one unit about its centre; later glyphs make room
+  const acc = glyphs.filter((g) => g.style === 'i');
+  const aL = acc.length ? Math.min(...acc.map((g) => g.cx - g.w / 2)) : 0, aR = acc.length ? Math.max(...acc.map((g) => g.cx + g.w / 2)) : 0;
+  const aW = aR - aL;
+  let wordSc = 1;
+  if (idx === 0) wordSc = lerp(0.96, 1.1, ease.outCubic(clamp((t - tIn - 0.5) / 1.1)));
+  if (idx === 1) {
+    const hit = clamp((t - T.lightning[0]) / 0.12);
+    wordSc = lerp(1, 1.3, ease.outBack(hit, 2.5)) * (1 + 0.05 * Math.max(0, clamp(thunder * 1.6, -1, 1)));
+  }
   for (const g of glyphs) {
     if (g.ch === ' ') continue;
     const i = g.idx;
@@ -699,50 +710,43 @@ function drawNatureLine(K, t, idx) {
     const pin = ease.outCubic(clamp((t - tIn - g.line * 0.28 - (i - lineStart[g.line]) * 0.018) / 0.55));
     let order = count - 1 - i;
     if (idx === 1 || idx === 2) order = Math.floor(hash1(i * 3.7 + idx * 11) * count);
-    const q = ease.inCubic(clamp((t - tOut - order * 0.009) / 0.42));
+    const q = idx === 3 ? ease.inCubic(clamp((t - tOut - order * 0.005) / 0.3)) : ease.inCubic(clamp((t - tOut - order * 0.009) / 0.42));
     if (pin <= 0 || q >= 1) continue;
     const h1 = hash1(i + idx * 31), h2 = hash1(i * 7.3 + idx);
     let dx = 0, dy = (1 - pin) * 0.03 * H, rot = 0, blur = (1 - pin) * 15, sc = 1, halo = 0.16;
     const accent = g.style === 'i';
     if (idx === 0) {
-      // the river: the key word keeps flowing
-      if (accent) dy += Math.sin(i * 0.8 - t * 6) * 0.006 * H * pin;
       dx += q * 0.08 * H * (1 + 0.15 * h1);
     } else if (idx === 1) {
       if (accent) {
+        // "loud" is hit by the thunder: it slams up in size and rattles
         const jolt = clamp(thunder * 1.6, -1, 1);
-        sc = 1 + 0.18 * Math.max(0, jolt) * (1 - q);
-        dx += jolt * 0.006 * H * (h1 - 0.5) * 4;
-        dy += jolt * 0.004 * H * (h2 - 0.5) * 4;
+        dx += jolt * 0.008 * H * (h1 - 0.5) * 4;
+        dy += jolt * 0.006 * H * (h2 - 0.5) * 4;
       }
-      // rain washes the words down
       dy += q * 0.16 * H * (0.5 + h2);
       blur += q * 12;
     } else if (idx === 2) {
       if (accent) {
         const b = fireflyBlink({ f: 0.9, ph: h1, az: 0 }, t + h2 * 0.3);
-        G.globalAlpha = Math.min(1, b) * pin * (1 - q) * 0.8;
-        const s = 0.05 * H;
-        G.drawImage(glowDot(64, FIREFLY), g.cx - s, g.y - s * 1.2, 2 * s, 2 * s);
+        G.globalAlpha = Math.min(1, b) * pin * (1 - q) * 0.45;
+        const s = 0.028 * H;
+        G.drawImage(glowDot(64, FIREFLY), g.cx - s, g.y - g.w * 1.6 - s, 2 * s, 2 * s);
         G.globalAlpha = 1;
       }
-      // float up and dissolve like fireflies
       dy -= q * 0.12 * H * (0.4 + h2);
       dx += q * 0.04 * H * (h1 - 0.5);
       blur += q * 16;
     } else if (idx === 3) {
-      if (accent) {
-        const rise = ease.outCubic(clamp((t - tIn - 0.35 - (i % 5) * 0.05) / 0.8));
-        dy += (1 - rise) * 0.05 * H;
-        const s = 0.07 * H;
-        G.globalAlpha = 0.08 * pin * (1 - q);
-        G.drawImage(glowDot(64, [255, 170, 110]), g.cx - s, g.y - s * 1.1, 2 * s, 2 * s);
-        G.globalAlpha = 1;
-      }
       // swept off by the flock
       dx += q * 0.22 * H * (1 + 0.3 * h1);
       dy -= q * 0.05 * H * h2;
       rot = q * (h1 - 0.3) * 0.5;
+    }
+    if (wordSc !== 1 && acc.length) {
+      // grow from the word's left edge so it never runs into the words before it
+      if (accent) { dx += (g.cx - aL) * (wordSc - 1); sc *= wordSc; }
+      else if (g.cx > aR && g.line === acc[0].line) dx += aW * (wordSc - 1);
     }
     const alpha = Math.pow(pin, 1.3) * (1 - q);
     const color = idx === 3 && accent ? '#FFF4E6' : g.color;
@@ -777,12 +781,12 @@ export function drawNature(K, t, cam) {
   if (s === 0) {
     const lift = (1 - cam.tilt) * 0.6;
     drawDroplet(K, t);
-    drawFlare(K, t, sunPx, smoothstep(1.0, 2.0, t));
+    drawFlare(K, t, sunPx, smoothstep(T.impact + 0.5, T.impact + 1.4, t));
     drawBirds(K, t, lift);
     drawWind(K, t, lift);
     drawNatureLine(K, t, 0);
-    drawReeds(K, t, (1 - cam.tilt) * 0.75, smoothstep(1.6, 2.5, t) * 0.8);
-    drawRain(K, t, smoothstep(2.3, 2.6, t) * 0.5);
+    drawReeds(K, t, (1 - cam.tilt) * 0.75, smoothstep(T.shots[1] - 1.0, T.shots[1] - 0.1, t) * 0.8);
+    drawRain(K, t, smoothstep(T.shots[1] - 0.3, T.shots[1], t) * 0.5);
   } else if (s === 1) {
     for (const [i, b] of BOLTS.entries()) drawBolt(K, b, i === 0 ? strike(t, T.lightning[0]) : 0.6 * strike(t, T.lightning[1]), W, H);
     drawRain(K, t, 1);

@@ -8,10 +8,14 @@ import { font } from '../core/fonts.js';
 import { layout, metrics, textWidth } from './text.js';
 import { cameraBasis, dirFromAngles, projectDir } from './camera.js';
 import { SOFT_MAX, glowDot } from './fx.js';
+import BCB_PATH from './boatclubPath.js';
+
+let bcbPath = null;
 
 const SUN_EL = 0.49;
 const SUN_RAD = 0.1;
-const E = T.end;
+// End cards are authored on the design timeline; the director warps real time onto it.
+const E = T.endDesign;
 
 // camera keyframes: [pitch, tanHalf]
 const KF = {
@@ -168,6 +172,14 @@ function cardVenue(K, t) {
   const vc = vs * cap(K, 'serifIt', 400, 100);
   const base = 0.44 * H + vc / 2;
   riseLine(K, EVENT.venue, font('serifIt', vs), W / 2, base, vc, E[4] + 0.06, t, { stagger: 0.02, out, color: '#FFF7EE' });
+  // the venue's own emblem, in their tan
+  const ep = ease.outBack(clamp((t - E[4] - 0.02) / 0.4), 1.6) * (1 - ease.inCubic(out));
+  if (ep > 0) {
+    bcbPath ||= new Path2D(BCB_PATH);
+    const er = 0.075 * U;
+    L.save(); L.translate(W / 2, base - vc - 0.05 * U - er); L.scale(er * ep, er * ep); L.rotate((1 - ep) * -0.6);
+    L.globalAlpha = Math.min(1, ep); L.fillStyle = '#DDB788'; L.fill(bcbPath, 'evenodd'); L.restore();
+  }
   const cs = 0.045 * U;
   riseLine(K, EVENT.city.toUpperCase(), font('mona', cs, 760, 125), W / 2, base + 0.12 * U, cs * 0.72, E[4] + 0.4, t, { tracking: cs * 0.55, stagger: 0.03, out, color: '#F0D9C6' });
   // the river (the Ganga canal) drawn as a line, ending in a pin
@@ -195,7 +207,7 @@ function cardVenue(K, t) {
 function cardLockup(K, t) {
   const { L, W, H } = K;
   const U = Math.min(H, W * 0.9);
-  const t0 = E[5] + 0.25;
+  const t0 = E[5] + 0.08;
   const ps = 0.026 * U;
   riseLine(K, `${EVENT.host}  PRESENTS`, font('mona', ps, 640, 118), W / 2, 0.39 * H, ps * 0.72, t0, t, { tracking: ps * 0.5, stagger: 0.012, color: '#F0D9C6' });
   const size = fitCap(K, EVENT.title, 'mona', 900, 112, 0.125 * U, 0.8 * W);
@@ -212,7 +224,7 @@ function cardLockup(K, t) {
 
 export function drawEnd(K, t, cam) {
   const { G, W, H } = K;
-  if (t < T.endHit) return;
+  if (t < E[0]) return;
   const sp = projectDir(cam, dirFromAngles(0, SUN_EL), W, H);
   const discR = (SUN_RAD / (2 * cam.tanHalf)) * H;
   if (sp) {

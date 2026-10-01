@@ -2,6 +2,7 @@
 // Everything is synthesised; randomness is seeded so renders are repeatable.
 
 import { mulberry32 } from '../core/math.js';
+import { BEAT } from '../config.js';
 
 export const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
@@ -70,6 +71,20 @@ export class Synth {
     this.drums = c.createGain(); this.drums.connect(this.wall);
     this.duck = c.createGain(); this.duck.connect(this.wall);
     this.music = c.createGain(); this.music.connect(this.duck);
+    // stereo chorus on the music bus (above 260 Hz, so the low end stays mono)
+    const chHp = c.createBiquadFilter(); chHp.type = 'highpass'; chHp.frequency.value = 260;
+    const chIn = c.createGain(); chIn.gain.value = 0.55;
+    this.music.connect(chHp).connect(chIn);
+    const merge = c.createChannelMerger(2);
+    [[0.011, 0.37, 0], [0.017, 0.29, 1]].forEach(([base, rate, ch]) => {
+      const d = c.createDelay(0.05); d.delayTime.value = base;
+      const lfo = c.createOscillator(); lfo.frequency.value = rate;
+      const lg = c.createGain(); lg.gain.value = 0.0035;
+      lfo.connect(lg).connect(d.delayTime); lfo.start(0);
+      const mono = c.createGain(); mono.channelCount = 1; mono.channelCountMode = 'explicit'; mono.channelInterpretation = 'speakers';
+      chIn.connect(mono).connect(d).connect(merge, 0, ch);
+    });
+    merge.connect(this.duck);
     this.airy = c.createGain(); this.airy.connect(this.master); // un-ducked intro/outro music
     this.fx = c.createGain(); this.fx.connect(this.master);
     this.amb = c.createGain(); this.amb.connect(this.master);
@@ -79,7 +94,8 @@ export class Synth {
     this.roomIn = c.createGain(); this.roomIn.connect(this.room); this.room.connect(this.master);
     // ping-pong delay for plucks
     const dl = c.createDelay(1), dr = c.createDelay(1);
-    dl.delayTime.value = 0.375; dr.delayTime.value = 0.375;
+    // dotted-eighth ping-pong at the groove tempo
+    dl.delayTime.value = BEAT * 0.75; dr.delayTime.value = BEAT * 0.75;
     const fb = c.createGain(); fb.gain.value = 0.34;
     const dlp = c.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 3200;
     const merger = c.createChannelMerger(2);
@@ -255,7 +271,7 @@ export class Synth {
     sub.start(t); sub.stop(t + dur + 0.1);
   }
 
-  supersaw(t, notes, dur, v = 1, { cutoff = 5200, end = 900, out = this.music, hall = 0.22, attack = 0.003, spread = 0.7, voices = 5 } = {}) {
+  supersaw(t, notes, dur, v = 1, { cutoff = 5200, end = 900, out = this.music, hall = 0.22, attack = 0.003, spread = 0.95, voices = 5 } = {}) {
     const c = this.ctx;
     const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1.2;
     lp.frequency.setValueAtTime(cutoff, t);
@@ -263,7 +279,7 @@ export class Synth {
     const g = c.createGain();
     this.env(g, t, { a: attack, peak: v * 0.07, hold: dur * 0.3, d: dur * 0.7 });
     lp.connect(g).connect(out);
-    const dets = voices === 7 ? [-19, -12, -6, 0, 6, 12, 19] : [-14, -6, 0, 6, 14];
+    const dets = voices === 7 ? [-19, -12, -6, 0, 6, 12, 19] : [-16, -7, 0, 7, 16];
     notes.forEach((m) => {
       dets.forEach((d, i) => {
         const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mtof(m); o.detune.value = d;
@@ -777,5 +793,115 @@ export class Synth {
     am.connect(amg).connect(g.gain);
     o.connect(g).connect(this.fx); this.send(g, { room: 0.4 });
     [o, am].forEach((x) => { x.start(t); x.stop(t + 0.12); });
+  }
+
+  // ---- groove voices (v3) ------------------------------------------------------
+  /** Tabla strokes: na / tin (dayan, tuned to D), ge (bayan with palm bend), dha, ka. */
+  tabla(t, stroke, v = 1, { pan = 0, room = 0.25 } = {}) {
+    const c = this.ctx;
+    const out = c.createGain(); out.gain.value = v;
+    const pn = this.pan(out, pan); pn.connect(this.drums); this.send(pn, { room });
+    const dayan = (ring) => {
+      const f = 587.3;
+      [[1, 1, ring], [2.0, 0.5, ring * 0.6], [3.01, 0.32, ring * 0.45], [4.02, 0.18, ring * 0.3], [5.1, 0.1, ring * 0.2]].forEach(([r, a, d]) => {
+        const o = c.createOscillator(); o.frequency.value = f * r;
+        const g = c.createGain(); this.env(g, t, { a: 0.0008, peak: a * 0.28, d });
+        o.connect(g).connect(out); o.start(t); o.stop(t + d + 0.1);
+      });
+      const n = this.noiseSrc(t, 0.03);
+      const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 1.2;
+      const ng = c.createGain(); this.env(ng, t, { a: 0.0005, peak: 0.35, d: 0.012 });
+      n.connect(bp).connect(ng).connect(out);
+    };
+    const bayan = (bend = 1) => {
+      const o = c.createOscillator();
+      o.frequency.setValueAtTime(92, t);
+      o.frequency.linearRampToValueAtTime(92 + 55 * bend, t + 0.14);
+      o.frequency.setTargetAtTime(92 + 40 * bend, t + 0.14, 0.2);
+      const g = c.createGain(); this.env(g, t, { a: 0.002, peak: 0.9, d: 0.55 });
+      o.connect(this.shaper(1.6)).connect(g).connect(out); o.start(t); o.stop(t + 0.9);
+      const n = this.noiseSrc(t, 0.05, true);
+      const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600;
+      const ng = c.createGain(); this.env(ng, t, { a: 0.001, peak: 0.5, d: 0.03 });
+      n.connect(lp).connect(ng).connect(out);
+    };
+    if (stroke === 'na') dayan(0.22);
+    else if (stroke === 'tin') dayan(0.55);
+    else if (stroke === 'ge') bayan(1);
+    else if (stroke === 'dha') { dayan(0.3); bayan(0.8); }
+    else if (stroke === 'ka') {
+      const n = this.noiseSrc(t, 0.06, true);
+      const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 380; bp.Q.value = 1.6;
+      const g = c.createGain(); this.env(g, t, { a: 0.0008, peak: 1.0, d: 0.035 });
+      n.connect(bp).connect(g).connect(out);
+    }
+  }
+
+  /** Formant vocal chop: short sung syllable, pitched, scooped into the note. */
+  chop(t, midi, dur, v = 1, { vowel = 'a', pan = 0, delay = 0.18, hall = 0.28, out = this.music } = {}) {
+    const c = this.ctx;
+    const F = { a: [[730, 1], [1090, 0.5], [2440, 0.25]], o: [[570, 1], [840, 0.45], [2410, 0.2]], u: [[320, 1], [870, 0.3], [2240, 0.12]], e: [[530, 1], [1840, 0.45], [2480, 0.25]], i: [[300, 1], [2290, 0.4], [3010, 0.25]] }[vowel];
+    const f0 = 440 * Math.pow(2, (midi - 69) / 12);
+    const src = c.createGain();
+    for (const [det, typ, lvl] of [[-6, 'sawtooth', 0.6], [6, 'sawtooth', 0.6], [1200, 'triangle', 0.25]]) {
+      const o = c.createOscillator(); o.type = typ;
+      o.frequency.setValueAtTime(f0 * Math.pow(2, -0.6 / 12), t);
+      o.frequency.exponentialRampToValueAtTime(f0, t + 0.035);
+      o.detune.value = det;
+      const g = c.createGain(); g.gain.value = lvl;
+      o.connect(g).connect(src); o.start(t); o.stop(t + dur + 0.08);
+    }
+    const mix = c.createGain();
+    for (const [f, a] of F) {
+      const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = f < 1000 ? 7 : 11;
+      const g = c.createGain(); g.gain.value = a * 2.2;
+      src.connect(bp).connect(g).connect(mix);
+    }
+    const air = c.createBiquadFilter(); air.type = 'highshelf'; air.frequency.value = 5000; air.gain.value = 4;
+    const env = c.createGain();
+    env.gain.setValueAtTime(0, t); env.gain.linearRampToValueAtTime(v * 0.34, t + 0.006);
+    env.gain.setValueAtTime(v * 0.34, t + Math.max(0.01, dur - 0.035)); env.gain.linearRampToValueAtTime(0, t + dur);
+    const pn = this.pan(mix.connect(air).connect(env), pan);
+    pn.connect(out);
+    this.send(pn, { delay, hall });
+  }
+
+  shaker(t, v = 1, pan = 0.3) {
+    const c = this.ctx;
+    const n = this.noiseSrc(t, 0.09);
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 7800; bp.Q.value = 1.1;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * 0.22, t + 0.012); g.gain.setTargetAtTime(0, t + 0.014, 0.02);
+    this.pan(n.connect(bp).connect(g), pan).connect(this.drums);
+  }
+
+  /** 808-style sub with a glide into the next note. */
+  sub808(t, midi, dur, v = 1, glideTo = null) {
+    const c = this.ctx;
+    const f = 440 * Math.pow(2, (midi - 69) / 12);
+    const o = c.createOscillator();
+    o.frequency.setValueAtTime(f * 1.9, t);
+    o.frequency.exponentialRampToValueAtTime(f, t + 0.04);
+    if (glideTo !== null) o.frequency.setTargetAtTime(440 * Math.pow(2, (glideTo - 69) / 12), t + dur * 0.55, dur * 0.12);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * 0.85, t + 0.004);
+    g.gain.setTargetAtTime(v * 0.55, t + 0.05, 0.25); g.gain.setTargetAtTime(0, t + dur, 0.06);
+    o.connect(this.shaper(2.2)).connect(g).connect(this.music);
+    o.start(t); o.stop(t + dur + 0.4);
+  }
+
+  /** Resonant-filtered supersaw hit through a rising filter (build sweeps). */
+  sweep(t0, t1, notes, v = 1) {
+    const c = this.ctx;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 6;
+    lp.frequency.setValueAtTime(300, t0); lp.frequency.exponentialRampToValueAtTime(7000, t1);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(v * 0.05, t1 - 0.02); g.gain.linearRampToValueAtTime(0, t1);
+    lp.connect(g).connect(this.fx);
+    this.send(g, { hall: 0.3 });
+    notes.forEach((m) => [-12, 0, 12].forEach((d) => {
+      const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 440 * Math.pow(2, (m - 69) / 12); o.detune.value = d;
+      o.connect(lp); o.start(t0); o.stop(t1 + 0.05);
+    }));
   }
 }

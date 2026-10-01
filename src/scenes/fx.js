@@ -69,7 +69,7 @@ export function richGlyphs(ctx, lines, size, { x0, y0, align = 'left', lineGap =
     const row = [];
     for (const [text, st] of segs) {
       const s = styles[st];
-      const f = font(s.key, size);
+      const f = font(s.key, size * (s.k || 1));
       const l = layout(ctx, text, f);
       for (const c of l.chars) row.push({ ...c, x: lx + c.x, font: f, color: s.color, style: st });
       lx += l.width;

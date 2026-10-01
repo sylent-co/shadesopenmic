@@ -3,17 +3,20 @@
 // shower door, a building going dark at 2 AM, a hostel group chat, a record
 // the neighbours can't escape — then "GIVE IT A MIC."
 
-import { T, COPY, C } from '../config.js';
+import { T, COPY, C, BCB, BAR, BEAT } from '../config.js';
 import { clamp, lerp, seg, ease, hash1, mulberry32, TAU, smoothstep, spring, rgba, noise1 } from '../core/math.js';
 import { font } from '../core/fonts.js';
 import { layout, textWidth } from './text.js';
 import { glowDot } from './fx.js';
 import {
-  IDENT, setView, zoomM, beatEnv, riseTail, drawThat, drawHUD, STARS, sevenSeg, vinylCanvas, sceneClimax, keyLayout,
+  IDENT, setView, setBase, orbitM, zoomM, beatEnv, kickEnv, riseTail, drawThat, drawHUD, STARS, sevenSeg, vinylCanvas, sceneClimax, keyLayout,
 } from './kit.js';
 
-const LINE = 2.4;
+// Scenes are authored on a 2.4 s bar; WARP maps the real (faster) bar onto it.
+const LINE = BAR;
+const WARP = 2.4 / LINE;
 const lineAt = (t) => clamp(Math.floor((t - T.drop) / LINE), 0, 4);
+let keyPulse = 1; // key words breathe with the kick
 const portraitOf = (K) => K.H > K.W;
 
 // ---- shared -----------------------------------------------------------------
@@ -22,14 +25,16 @@ const portraitOf = (K) => K.H > K.W;
 function drawKey(ctx, lay, word, color, fn) {
   const f = font('mona', lay.size, 900, lay.wdth);
   const lw = layout(ctx, word, f);
+  const wc = lay.x0 + lw.width / 2;
   for (const ch of lw.chars) {
     const st = fn(ch);
     if (!st || st.a <= 0) continue;
     ctx.save();
-    const cx = lay.x0 + ch.x + ch.w / 2, cy = lay.baseline - lay.capPx / 2;
+    const cx = wc + (lay.x0 + ch.x + ch.w / 2 - wc) * keyPulse, cy = lay.baseline - lay.capPx / 2;
     ctx.translate(cx + (st.dx || 0), cy + (st.dy || 0));
     if (st.rot) ctx.rotate(st.rot);
-    if (st.s !== undefined && st.s !== 1) ctx.scale(st.s, st.s);
+    const sc = (st.s ?? 1) * keyPulse;
+    if (sc !== 1) ctx.scale(sc, sc);
     ctx.globalAlpha = Math.min(1, st.a);
     ctx.font = st.font || f;
     ctx.fillStyle = st.color || color;
@@ -41,7 +46,30 @@ function drawKey(ctx, lay, word, color, fn) {
 
 function textBlock(K, lay, lt, tail, colors, { that = 0.06, tailT = 0.42 } = {}) {
   drawThat(K, lay, lt, that, colors.sub);
-  riseTail(K, tail, lay, lt, tailT, 0.05, colors, lay.alignRight);
+  riseTail(K, tail, lay, lt, tailT, 0.07, colors, lay.alignRight);
+}
+
+/**
+ * Giant outlined role name behind the scene, two rows that step on every beat
+ * in opposite directions (eased, so it snaps rather than slides).
+ */
+function ticker(K, t, word, color, alpha = 0.13, rows = [0.2, 0.8]) {
+  const { L, W, H } = K;
+  const beats = (t - T.drop) / BEAT;
+  const stepped = Math.floor(beats) + ease.outExpo(beats - Math.floor(beats));
+  const size = 0.24 * Math.min(H, W * 0.9);
+  const f = font('mona', size, 900, 125);
+  const text = `${word}  ·  `;
+  const tw = textWidth(L, text, f);
+  L.save();
+  L.font = f; L.strokeStyle = color; L.lineWidth = Math.max(1.5, size * 0.012); L.globalAlpha = alpha;
+  L.textBaseline = 'middle';
+  rows.forEach((ry, k) => {
+    const dir = k % 2 ? -1 : 1;
+    let x = -(((stepped * 0.2 * tw * dir) % tw) + tw) % tw - tw;
+    for (; x < W + tw; x += tw) L.strokeText(text, x, ry * H);
+  });
+  L.restore();
 }
 
 // ---- 01 POEM — the notes app ---------------------------------------------------
@@ -160,6 +188,7 @@ function scenePoem(K, lt, t) {
   for (let y = gap * 0.6 - off; y < H; y += gap) L.fillRect(0, y, W, Math.max(1, 0.0016 * H));
   L.fillStyle = rgba(C.cream, 0.15);
   L.fillRect(0.05 * W, 0, Math.max(1, 0.0022 * H), H);
+  ticker(K, t, 'POETS', C.cream, 0.12);
   L.restore();
   if (ir > r0 + 2) drawPhone(K, phoneGeom(K), lt, t);
   // key: typed in, with a big caret
@@ -329,7 +358,9 @@ function sceneStory(K, lt, t) {
   const B = buildingGeom(K);
   const kw = BLD.wins[BLD.keep];
   const kx = B.x0 + kw.i * B.cw, ky = B.y0 + kw.j * B.rh;
-  const z = ease.inOutCubic(seg(lt, 0.7, 1.02));
+  const zIn = ease.inOutCubic(seg(lt, 0.7, 1.02));
+  const zOut = 1 - ease.outExpo(seg(lt, 0.0, 0.46));
+  const z = Math.max(zIn, zOut);
   const target = portraitOf(K) ? 0.94 * W / B.ww : Math.min(0.84 * W / B.ww, 0.76 * H / B.wh);
   const s = Math.exp(lerp(0, Math.log(target), z)) * (1 + 0.03 * seg(lt, 1.0, 2.4));
   const P = [kx + B.ww / 2, ky + B.wh / 2];
@@ -413,8 +444,6 @@ function sceneStory(K, lt, t) {
     });
     textBlock(K, lay, lt2, COPY.lines[2].tail, { sub: '#1C1209', accent: '#B8200C' }, { that: 0.05, tailT: 0.2 });
   }
-  const off = seg(lt, 2.28, 2.33);
-  if (off > 0) { L.fillStyle = `rgba(0,0,0,${off})`; L.fillRect(0, 0, W, H); }
 }
 
 // ---- 04 JOKE — the group chat that never lets it go -------------------------------
@@ -542,6 +571,7 @@ function sceneJoke(K, lt, t, doodle = true) {
     }
     L.restore();
   }
+  ticker(K, t, 'STAND-UP', C.cream, 0.07);
   const me = drawChat(K, lt);
   const lay = keyLayout(K, 'JOKE', 'left', { cy: 0.47, targetW: 0.44 });
   const laughOn = smoothstep(0.35, 0.5, lt);
@@ -582,22 +612,57 @@ function eqBuffer(W, H) {
   return eqCanvas.getContext('2d');
 }
 
+const MIX_THEMES = {
+  shades: { bg: C.red, fg: C.cream, sub: C.cream, accent: C.ink, ring: '255,230,210', label: 'shades', ghost: C.cream },
+  bcb: { bg: BCB.tan, fg: BCB.green, sub: BCB.green, accent: BCB.deep, ring: '30,60,48', label: 'bcb', ghost: BCB.green },
+};
+// The record "flips" on beat 3 of the bar (design time inside the 2.4 s bar).
+export const MIX_FLIP = 1.2;
+
 function sceneMix(K, lt, t) {
-  const { L, S, W, H } = K;
-  L.fillStyle = C.red; L.fillRect(0, 0, W, H);
+  const flip = ease.outExpo(seg(lt, MIX_FLIP, MIX_FLIP + 0.3));
+  const { L, S, G, W, H } = K;
+  const { R, cx, cy } = mixRecord(K);
+  if (flip < 1) mixLayer(K, lt, t, MIX_THEMES.shades);
+  if (flip > 0) {
+    // wipe out from the spindle, with a bright seam riding the edge
+    const rr = flip * Math.hypot(Math.max(cx, W - cx), Math.max(cy, H - cy)) * 1.02;
+    for (const ctx of [L, S, G]) { ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, rr, 0, TAU); ctx.clip(); }
+    if (flip < 1) { L.clearRect(0, 0, W, H); S.clearRect(0, 0, W, H); }
+    mixLayer(K, lt, t, MIX_THEMES.bcb);
+    for (const ctx of [L, S, G]) ctx.restore();
+    if (flip < 1) {
+      G.save(); G.globalAlpha = (1 - flip) * 0.9; G.strokeStyle = '#FFF1D6';
+      G.lineWidth = (1 - flip) * 0.03 * H + 1.5;
+      G.beginPath(); G.arc(cx, cy, rr, 0, TAU); G.stroke(); G.restore();
+    }
+  }
+  drawStickyNote(K, lt);
+}
+
+function mixLayer(K, lt, t, th) {
+  const { L, W, H } = K;
+  L.fillStyle = th.bg; L.fillRect(0, 0, W, H);
+  if (th.label === 'bcb') {
+    const vg = L.createRadialGradient(W * 0.6, H * 0.5, H * 0.2, W * 0.6, H * 0.5, Math.hypot(W, H) * 0.65);
+    vg.addColorStop(0, 'rgba(255,240,215,0.18)'); vg.addColorStop(1, 'rgba(60,40,15,0.18)');
+    L.fillStyle = vg; L.fillRect(0, 0, W, H);
+  }
+  ticker(K, t, 'DJs', th.fg, th.label === 'bcb' ? 0.14 : 0.12);
   const { R, cx, cy } = mixRecord(K);
   // sound through the wall: rings on every beat
   for (let k = 0; k < 4; k++) {
-    const b = (t - T.drop) / (60 / 100);
+    const b = (t - T.drop) / BEAT;
     const a = (b - Math.floor(b) + k) * 0.6;
-    L.strokeStyle = `rgba(255,230,210,${0.12 * Math.max(0, 1 - a / 2.4)})`;
+    L.strokeStyle = `rgba(${th.ring},${0.14 * Math.max(0, 1 - a / 2.4)})`;
     L.lineWidth = 0.004 * H;
     L.beginPath(); L.arc(cx, cy, R * (1.02 + a * 0.35), 0, TAU); L.stroke();
   }
-  const v = vinylCanvas(Math.round(R));
+  const v = vinylCanvas(Math.round(R), th.label);
   const intro = ease.outExpo(clamp(lt / 0.24));
-  L.save(); L.translate(cx, cy); L.rotate(lt * 5.5 - (1 - intro) * 2.5); L.scale(intro, intro); L.drawImage(v.c, -v.R, -v.R); L.restore();
-  // tonearm
+  // a backspin as the record flips, then it picks the groove back up
+  const back = -2.6 * ease.inOutCubic(seg(lt, MIX_FLIP - 0.16, MIX_FLIP + 0.12));
+  L.save(); L.translate(cx, cy); L.rotate(lt * 5.5 + back - (1 - intro) * 2.5); L.scale(intro, intro); L.drawImage(v.c, -v.R, -v.R); L.restore();
   if (!portraitOf(K)) {
     const px = cx + R * 0.92, py = cy - R * 0.92;
     const ang = 2.25 + 0.05 * Math.sin(t * 2) - (1 - intro) * 0.5;
@@ -612,11 +677,11 @@ function sceneMix(K, lt, t) {
   const appear = ease.snap(clamp((lt - 0.03) / 0.16));
   if (appear > 0) {
     const f = font('mona', lay.size, 900, lay.wdth);
-    L.save(); L.globalAlpha = 0.3 * appear; L.font = f; L.fillStyle = C.cream; L.fillText('MIX', lay.x0, lay.baseline); L.restore();
+    L.save(); L.globalAlpha = 0.3 * appear; L.font = f; L.fillStyle = th.ghost; L.fillText('MIX', lay.x0, lay.baseline); L.restore();
     const E = eqBuffer(W, H);
     E.setTransform(1, 0, 0, 1, 0, 0); E.globalCompositeOperation = 'source-over'; E.clearRect(0, 0, W, H);
     const n = 30, bw = lay.width / n;
-    E.fillStyle = C.cream;
+    E.fillStyle = th.fg;
     for (let i = 0; i < n; i++) {
       const hgt = clamp(0.55 + 0.3 * beatEnv(t, 5) * (1 - i / n * 0.4) + 0.25 * (noise1(i * 0.7 + t * 7) - 0.3), 0.35, 1) * appear;
       E.fillRect(lay.x0 + i * bw + bw * 0.12, lay.baseline - lay.capPx * 1.05 * hgt, bw * 0.76, lay.capPx * 1.05 * hgt + 2);
@@ -625,28 +690,30 @@ function sceneMix(K, lt, t) {
     E.font = f; E.fillText('MIX', lay.x0, lay.baseline);
     L.drawImage(eqCanvas, 0, 0);
   }
-  textBlock(K, lay, lt, COPY.lines[4].tail, { sub: C.cream, accent: C.ink }, { tailT: 0.36 });
-  // the neighbour's sticky note
+  textBlock(K, lay, lt, COPY.lines[4].tail, { sub: th.sub, accent: th.accent }, { tailT: 0.36 });
+}
+
+function drawStickyNote(K, lt) {
+  const { L, S, W, H } = K;
   const na = lt - 0.9;
-  if (na > 0) {
-    const p = ease.outBack(clamp(na / 0.2), 2.4);
-    const ns = (portraitOf(K) ? 0.24 * W : 0.25 * H);
-    const nx = portraitOf(K) ? 0.62 * W : 0.535 * W, ny = portraitOf(K) ? 0.5 * H : 0.08 * H;
-    const rot = 0.09 - (1 - p) * 0.2;
-    S.save(); S.globalAlpha = 0.5; S.fillStyle = '#420600'; S.translate(nx + ns * 0.5 + 0.01 * H, ny + ns * 0.5 + 0.015 * H); S.rotate(rot); S.fillRect(-ns / 2, -ns / 2, ns, ns); S.restore();
-    L.save();
-    L.translate(nx + ns / 2, ny + ns / 2); L.rotate(rot); L.scale(lerp(1.4, 1, p), lerp(1.4, 1, p));
-    const ng = L.createLinearGradient(0, -ns / 2, 0, ns / 2);
-    ng.addColorStop(0, '#FFE680'); ng.addColorStop(1, '#F5CF4A');
-    L.fillStyle = ng; L.fillRect(-ns / 2, -ns / 2, ns, ns);
-    L.fillStyle = 'rgba(255,255,255,0.35)'; L.fillRect(-ns * 0.18, -ns / 2 - ns * 0.05, ns * 0.36, ns * 0.12);
-    L.fillStyle = '#2B2014';
-    const f1 = font('serifIt', ns * 0.16), f2 = font('serifIt', ns * 0.115);
-    L.font = f1; L.fillText('it’s 1 AM.', -ns * 0.4, -ns * 0.18);
-    L.fillText('please.', -ns * 0.4, ns * 0.02);
-    L.font = f2; L.fillText('(also… what song', -ns * 0.4, ns * 0.22); L.fillText('is this?)', -ns * 0.4, ns * 0.36);
-    L.restore();
-  }
+  if (na <= 0) return;
+  const p = ease.outBack(clamp(na / 0.2), 2.4);
+  const ns = (portraitOf(K) ? 0.24 * W : 0.25 * H);
+  const nx = portraitOf(K) ? 0.62 * W : 0.535 * W, ny = portraitOf(K) ? 0.5 * H : 0.08 * H;
+  const rot = 0.09 - (1 - p) * 0.2;
+  S.save(); S.globalAlpha = 0.5; S.fillStyle = '#420600'; S.translate(nx + ns * 0.5 + 0.01 * H, ny + ns * 0.5 + 0.015 * H); S.rotate(rot); S.fillRect(-ns / 2, -ns / 2, ns, ns); S.restore();
+  L.save();
+  L.translate(nx + ns / 2, ny + ns / 2); L.rotate(rot); L.scale(lerp(1.4, 1, p), lerp(1.4, 1, p));
+  const ng = L.createLinearGradient(0, -ns / 2, 0, ns / 2);
+  ng.addColorStop(0, '#FFE680'); ng.addColorStop(1, '#F5CF4A');
+  L.fillStyle = ng; L.fillRect(-ns / 2, -ns / 2, ns, ns);
+  L.fillStyle = 'rgba(255,255,255,0.35)'; L.fillRect(-ns * 0.18, -ns / 2 - ns * 0.05, ns * 0.36, ns * 0.12);
+  L.fillStyle = '#2B2014';
+  const f1 = font('serifIt', ns * 0.16), f2 = font('serifIt', ns * 0.115);
+  L.font = f1; L.fillText('it’s 1 AM.', -ns * 0.4, -ns * 0.18);
+  L.fillText('please.', -ns * 0.4, ns * 0.02);
+  L.font = f2; L.fillText('(also… what song', -ns * 0.4, ns * 0.22); L.fillText('is this?)', -ns * 0.4, ns * 0.36);
+  L.restore();
 }
 
 // ---------------------------------------------------------------------------
@@ -661,12 +728,22 @@ export function fastImpulses() {
 export function drawFast(K, t, post) {
   const { W, H } = K;
   if (t >= T.climax) {
+    setBase(IDENT);
     if (t < T.endHit + 0.02) sceneClimax(K, t, post);
     drawHUD(K, t, 5, C.cream);
     return;
   }
   const i = lineAt(t);
-  const lt = t - T.lines[i];
+  const lt = (t - T.lines[i]) * WARP;
+  const ph = (t - T.lines[i]) / LINE;
+  keyPulse = 1 + 0.055 * kickEnv(t);
+  // base camera: slow push and roll through each bar, whip-pan STORY -> JOKE
+  let ox = 0;
+  if (i === 2) ox = -W * 1.2 * ease.inExpo(seg(lt, 2.18, 2.4));
+  if (i === 3) ox = W * 1.2 * (1 - ease.outExpo(clamp(lt / 0.24)));
+  const roll = 0.006 * Math.sin((t - T.drop) * 1.6 + i * 1.3) * (1 - Math.abs(ox) / W);
+  setBase(orbitM(W / 2, H / 2, 1.016 + 0.032 * ease.outQuad(ph), roll, ox, 0));
+  setView(K, IDENT);
   if (i === 0) scenePoem(K, lt, t);
   else if (i === 1) sceneSong(K, lt, t);
   else if (i === 2) sceneStory(K, lt, t);
@@ -681,7 +758,6 @@ export function drawFast(K, t, post) {
         const P = [me.x + me.w / 2, me.y + me.h / 2];
         setView(K, zoomM(P, [lerp(P[0], W / 2, k), lerp(P[1], H / 2, k)], Math.exp(k * Math.log(45))));
         sceneJoke(K, 2.16, T.lines[3] + 2.16, false);
-        setView(K, IDENT);
       }
     } else sceneJoke(K, lt, t);
   } else {
@@ -695,9 +771,11 @@ export function drawFast(K, t, post) {
       setView(K, zoomM(P, [lerp(P[0], W / 2, k), lerp(P[1], H / 2, k)], Math.exp(k * Math.log(60))));
     }
     sceneMix(K, lt, t);
-    setView(K, IDENT);
     if (muffle > 0.01) post.exposure *= lerp(1, 0.6, muffle);
   }
-  const hudColor = i === 1 ? '#10403F' : i === 2 && lt > 0.9 ? '#1C1209' : C.cream;
+  setBase(IDENT);
+  setView(K, IDENT);
+  keyPulse = 1;
+  const hudColor = i === 1 ? '#10403F' : i === 2 && lt > 0.9 ? '#1C1209' : i === 4 && lt > MIX_FLIP + 0.1 ? BCB.green : C.cream;
   drawHUD(K, t, i, hudColor, i === 1 ? 1 - seg(lt, 2.26, 2.34) : 1);
 }

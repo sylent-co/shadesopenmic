@@ -1,6 +1,6 @@
 # SHADES — Open Mic · Trailer
 
-A 36.5-second trailer for the **SHADES Open Mic** (poets, musicians,
+A 31.6-second trailer for the **SHADES Open Mic** (poets, musicians,
 storytellers, stand-up comics and DJs) — **Saturday 24 October 2026, Boat
 Club Bistro, Roorkee**.
 
@@ -26,19 +26,21 @@ page falls back to playing the rendered MP4.
 
 ## The idea
 
-Nature makes things without asking permission. People hide theirs. The film
-answers that, then tells you where to bring yours.
+Everyone has a thing they make: a poem, a song, a story, a joke, a mix. The
+opening follows that thing through a day in nature without naming it; the
+middle names it; the end tells you where to bring it. Everything runs on one
+110 BPM grid, so every cut, lightning strike and caption lands on a beat.
 
 | Time | Section |
 | --- | --- |
-| 0–2.6 s | River at golden hour, a single droplet. *The river never rehearses.* |
-| 2.6–5.2 s | Monsoon: rain, wind-torn leaves, lightning, thunder. *The monsoon never asks if it’s too loud.* |
-| 5.2–7.4 s | Deodar forest at night; the fireflies fall silent, then flash together. *Fireflies don’t check who’s watching.* |
-| 7.4–10.3 s | Time-lapse to dawn, a koel, a starling murmuration. *Nothing out here waits to be ready.* |
-| 10.3–12 s | The camera pushes into the sun, which becomes the SHADES disc. *So why do you?* Two mic taps. |
-| 12–24 s | One bar (2.4 s) per line at 100 BPM: *that POEM still in your notes app* (a real-looking note, “i’m not really a poet” struck through) · *that SONG only your shower has heard* (written in the steam) · *that STORY you only tell at 2 AM* (the last lit window) · *that JOKE your group chat still quotes* (the hostel group) · *that MIX your neighbours know by heart* (and their sticky note). |
-| 24–26.4 s | **GIVE IT A MIC.** — the full stop becomes the logo. |
-| 26.4–36.5 s | End cards, one idea each: SHADES presents → OPEN MIC → who it’s for → 24 OCT → Boat Club Bistro, Roorkee → lockup. |
+| 0–2.6 s | A droplet lands on the river at golden hour. *It starts small.* |
+| 2.6–4.8 s | Monsoon: rain, torn leaves, lightning on the beat, drums arriving. *Then it gets loud.* |
+| 4.8–6.5 s | Deodar forest at night; the fireflies flash in sync. *It keeps you up.* |
+| 6.5–8.6 s | Time-lapse dawn and a murmuration over the water. *You keep it quiet.* |
+| 8.6–10.2 s | The camera pushes into the sun, which becomes the SHADES disc. *Not anymore.* Two mic taps. |
+| 10.2–21.1 s | One bar per line: POEM (a notes app) · SONG (written in shower steam) · STORY (the last lit window at 2 AM) · JOKE (the hostel group chat) · MIX (EQ-bar letters on SHADES red, then the record flips to Boat Club Bistro’s colours and emblem). |
+| 21.1–23.3 s | **GIVE IT A MIC.** — the full stop becomes the logo. |
+| 23.3–31.6 s | End cards, one idea each: SHADES presents → OPEN MIC → who it’s for → 24 OCT → Boat Club Bistro, Roorkee → lockup. |
 
 ## Run locally
 
@@ -84,14 +86,14 @@ fills the same frame.
   (end cards), `fx.js` (glow and blur helpers), `director.js` (timeline + post
   presets), `logo.js` (vector mark traced from the supplied logo).
 - `src/audio/` — `synth.js` (voices: drums, bass, supersaw, Karplus–Strong
-  santoor-like plucks, tanpura drone, rain, thunder, crickets, koel, birds,
-  hummed vowels, knocks, mic taps, scratch…),
+  santoor-like plucks, tanpura drone, tabla, formant vocal chops, 808, rain,
+  thunder, crickets, koel, birds, knocks, mic taps, scratch…),
   `score.js` (arrangement locked to the cue sheet), `engine.js` (offline
   render, BS.1770 loudness normalisation, look-ahead limiter, WAV).
 - `tools/` — static server, frame/audio/video renderers, single-file build.
 
 ## Credits
 
-- Logo: SHADES (vectorised from the supplied artwork).
+- Logos: SHADES and Boat Club Bistro (both vectorised from the supplied artwork).
 - Typefaces (SIL Open Font License 1.1): Mona Sans (GitHub), Instrument Serif
   (Instrument), JetBrains Mono (JetBrains).
