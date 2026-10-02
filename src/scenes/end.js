@@ -8,9 +8,9 @@ import { font } from '../core/fonts.js';
 import { layout, metrics, textWidth } from './text.js';
 import { cameraBasis, dirFromAngles, projectDir } from './camera.js';
 import { SOFT_MAX, glowDot } from './fx.js';
-import BCB_PATH from './boatclubPath.js';
+import BCB_WORDMARK, { ASPECT as BCB_ASPECT } from './boatclubWordmark.js';
 
-let bcbPath = null;
+let bcbWord = null;
 
 const SUN_EL = 0.49;
 const SUN_RAD = 0.1;
@@ -165,40 +165,56 @@ function cardDate(K, t) {
 }
 
 function cardVenue(K, t) {
-  const { L, G, W, H } = K;
+  const { L, S, G, W, H } = K;
   const U = Math.min(H, W * 0.9);
   const out = outK(t, E[5]);
-  const vs = fitCap(K, EVENT.venue, 'serifIt', 400, 100, 0.1 * U, 0.84 * W);
-  const vc = vs * cap(K, 'serifIt', 400, 100);
-  const base = 0.44 * H + vc / 2;
-  riseLine(K, EVENT.venue, font('serifIt', vs), W / 2, base, vc, E[4] + 0.06, t, { stagger: 0.02, out, color: '#FFF7EE' });
-  // the venue's own emblem, in their tan
-  const ep = ease.outBack(clamp((t - E[4] - 0.02) / 0.4), 1.6) * (1 - ease.inCubic(out));
-  if (ep > 0) {
-    bcbPath ||= new Path2D(BCB_PATH);
-    const er = 0.075 * U;
-    L.save(); L.translate(W / 2, base - vc - 0.05 * U - er); L.scale(er * ep, er * ep); L.rotate((1 - ep) * -0.6);
-    L.globalAlpha = Math.min(1, ep); L.fillStyle = '#DDB788'; L.fill(bcbPath, 'evenodd'); L.restore();
+  const o = ease.inCubic(out);
+  // Boat Club Bistro wordmark in their tan, revealed by a soft left-to-right wipe
+  bcbWord ||= new Path2D(BCB_WORDMARK);
+  const ww = H > W ? 0.84 * W : Math.min(0.6 * W, 1.9 * U);
+  const sc = ww / 2, wh = ww / BCB_ASPECT;
+  const cy = 0.42 * H;
+  const p = ease.outCubic(clamp((t - E[4] - 0.04) / 0.75));
+  if (p > 0 && o < 1) {
+    const rise = (1 - ease.outExpo(clamp((t - E[4] - 0.04) / 0.5))) * 0.04 * U - o * 0.03 * U;
+    const grow = lerp(1.04, 1, ease.outExpo(clamp((t - E[4]) / 0.7)));
+    const edge = -ww / 2 + p * ww * 1.15;
+    for (const [ctx, alpha, k] of [[S, 0.1, 0.5], [L, 1, 1]]) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(-W, -H, W + W / 2 + edge, 3 * H); ctx.clip();
+      ctx.translate(W / 2, cy - rise); ctx.scale(sc * grow, sc * grow);
+      ctx.globalAlpha = alpha * (1 - o);
+      ctx.fillStyle = k === 1 ? '#DDB788' : '#FFB070';
+      ctx.fill(bcbWord);
+      ctx.restore();
+    }
+    // a warm glint riding the wipe edge
+    if (p < 1) {
+      G.save(); G.globalAlpha = 0.5 * Math.sin(Math.PI * p);
+      G.drawImage(glowDot(128, [255, 200, 140]), W / 2 + edge - 0.06 * U, cy - wh * 0.7, 0.12 * U, wh * 1.4);
+      G.restore();
+    }
   }
-  const cs = 0.045 * U;
-  riseLine(K, EVENT.city.toUpperCase(), font('mona', cs, 760, 125), W / 2, base + 0.12 * U, cs * 0.72, E[4] + 0.4, t, { tracking: cs * 0.55, stagger: 0.03, out, color: '#F0D9C6' });
+  const base = cy + wh / 2 + 0.11 * U;
+  const cs = 0.04 * U;
+  riseLine(K, EVENT.city.toUpperCase(), font('mona', cs, 760, 125), W / 2, base, cs * 0.72, E[4] + 0.45, t, { tracking: cs * 0.55, stagger: 0.03, out, color: '#F0D9C6' });
   // the river (the Ganga canal) drawn as a line, ending in a pin
-  const p = ease.inOutCubic(clamp((t - E[4] - 0.3) / 0.8)) * (1 - ease.inCubic(out));
-  if (p > 0) {
-    const y = base + 0.2 * U, x0 = W * 0.28, x1 = W * 0.72;
-    L.save(); L.strokeStyle = 'rgba(244,237,224,0.6)'; L.lineWidth = Math.max(1.5, 0.003 * U); L.lineCap = 'round';
+  const rp = ease.inOutCubic(clamp((t - E[4] - 0.35) / 0.8)) * (1 - o);
+  if (rp > 0) {
+    const y = base + 0.075 * U, x0 = W / 2 - Math.min(0.22 * W, 0.4 * U), x1 = W / 2 + Math.min(0.22 * W, 0.4 * U);
+    L.save(); L.strokeStyle = 'rgba(244,237,224,0.55)'; L.lineWidth = Math.max(1.5, 0.003 * U); L.lineCap = 'round';
     L.beginPath();
     const n = 60;
-    for (let i = 0; i <= n * p; i++) {
+    for (let i = 0; i <= n * rp; i++) {
       const u = i / n;
-      const x = lerp(x0, x1, u), yy = y + Math.sin(u * TAU * 1.5) * 0.012 * U;
+      const x = lerp(x0, x1, u), yy = y + Math.sin(u * TAU * 1.5) * 0.01 * U;
       i ? L.lineTo(x, yy) : L.moveTo(x, yy);
     }
     L.stroke(); L.restore();
-    if (p > 0.98) {
+    if (rp > 0.98) {
       const pulse = 0.5 + 0.5 * Math.sin((t - E[4]) * 8);
-      const px = x1, py = y + Math.sin(TAU * 1.5) * 0.012 * U;
-      L.fillStyle = '#FF3A1F'; L.beginPath(); L.arc(px, py, 0.009 * U, 0, TAU); L.fill();
+      const px = x1, py = y + Math.sin(TAU * 1.5) * 0.01 * U;
+      L.fillStyle = '#FF3A1F'; L.beginPath(); L.arc(px, py, 0.008 * U, 0, TAU); L.fill();
       G.globalAlpha = 0.5 * pulse; G.drawImage(glowDot(64, [255, 80, 50]), px - 0.04 * U, py - 0.04 * U, 0.08 * U, 0.08 * U); G.globalAlpha = 1;
     }
   }

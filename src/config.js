@@ -60,7 +60,7 @@ const CLIMAX = DROP + 5 * BAR;
 const END_HIT = CLIMAX + BAR;
 // End cards are animated in "design" seconds (endDesign) and warped onto the
 // real timeline (end), so they can be retimed without touching their motion.
-const END_DUR = [1.3, 1.1, 1.35, 1.1, 1.1, 1.8];
+const END_DUR = [1.3, 1.1, 2.0, 1.55, 1.65, 1.8];
 const END = END_DUR.reduce((a, d) => [...a, a[a.length - 1] + d], [END_HIT]);
 
 export const T = {
@@ -83,14 +83,14 @@ export const T = {
   climaxWords: [0, 1, 2, 3].map((i) => CLIMAX + (i * BEAT) / 2),
   endHit: END_HIT,
   end: END.slice(0, 6),
-  endDesign: [26.4, 28.0, 29.6, 31.2, 32.6, 34.0, 35.9],
+  endDesign: [26.4, 28.0, 29.6, 31.9, 33.8, 35.8, 37.7],
   fadeOut: [END[6], END[6] + 0.5],
 };
 
 /** Real end-sequence time -> design time used by the end cards. */
 export function endDesignTime(t) {
   const R = [...T.end, T.fadeOut[0], T.fadeOut[1]];
-  const D = [...T.endDesign, 36.5];
+  const D = [...T.endDesign, T.endDesign[6] + 0.6];
   if (t <= R[0]) return D[0] + (t - R[0]);
   for (let i = 0; i < R.length - 1; i++) {
     if (t <= R[i + 1]) return D[i] + ((t - R[i]) / (R[i + 1] - R[i])) * (D[i + 1] - D[i]);

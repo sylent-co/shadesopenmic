@@ -1,6 +1,6 @@
 # SHADES — Open Mic · Trailer
 
-A 31.6-second trailer for the **SHADES Open Mic** (poets, musicians,
+A 33.2-second trailer for the **SHADES Open Mic** (poets, musicians,
 storytellers, stand-up comics and DJs) — **Saturday 24 October 2026, Boat
 Club Bistro, Roorkee**.
 
@@ -40,7 +40,7 @@ middle names it; the end tells you where to bring it. Everything runs on one
 | 8.6–10.2 s | The camera pushes into the sun, which becomes the SHADES disc. *Not anymore.* Two mic taps. |
 | 10.2–21.1 s | One bar per line: POEM (a notes app) · SONG (written in shower steam) · STORY (the last lit window at 2 AM) · JOKE (the hostel group chat) · MIX (EQ-bar letters on SHADES red, then the record flips to Boat Club Bistro’s colours and emblem). |
 | 21.1–23.3 s | **GIVE IT A MIC.** — the full stop becomes the logo. |
-| 23.3–31.6 s | End cards, one idea each: SHADES presents → OPEN MIC → who it’s for → 24 OCT → Boat Club Bistro, Roorkee → lockup. |
+| 23.3–33.2 s | End cards, one idea each: SHADES presents → OPEN MIC → who it’s for → 24 OCT → the Boat Club Bistro wordmark, Roorkee → lockup. |
 
 ## Run locally
 
@@ -94,6 +94,6 @@ fills the same frame.
 
 ## Credits
 
-- Logos: SHADES and Boat Club Bistro (both vectorised from the supplied artwork).
+- Logos: SHADES, plus the Boat Club Bistro emblem and wordmark (all vectorised from the supplied artwork).
 - Typefaces (SIL Open Font License 1.1): Mona Sans (GitHub), Instrument Serif
   (Instrument), JetBrains Mono (JetBrains).
