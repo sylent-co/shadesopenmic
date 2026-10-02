@@ -1,0 +1,9 @@
+node_modules/
+.scratch/
+.build-*/
+frames/
+*.log
+dist/*.wav
+.hoplite/*
+!.hoplite/settings.json
+dist/*.mp4

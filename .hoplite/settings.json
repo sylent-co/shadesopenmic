@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "scripts": {
+    "run": "PORT=3000 HOST=0.0.0.0 node tools/serve.mjs"
+  },
+  "ports": {
+    "preview": 3000
+  }
+}

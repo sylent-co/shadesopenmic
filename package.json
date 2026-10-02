@@ -1,0 +1,16 @@
+{
+  "name": "shades-open-mic-trailer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SHADES Open Mic trailer: procedural JavaScript animation with synthesized audio",
+  "scripts": {
+    "dev": "node tools/serve.mjs",
+    "build": "node tools/build.mjs",
+    "render": "node tools/render.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "puppeteer-core": "^25.12.0"
+  }
+}

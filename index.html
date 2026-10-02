@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SHADES — Open Mic · 24 Oct 2026 · Boat Club Bistro, Roorkee</title>
+<link rel="icon" href="data:,">
+<meta name="description" content="Trailer for the SHADES Open Mic — poets, musicians, storytellers, stand-up comics and DJs. Saturday 24 October 2026, Boat Club Bistro, Roorkee.">
+<style>
+  :root { --red: #d8260f; --cream: #f4ede0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; color: var(--cream); font: 500 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #wrap { position: fixed; inset: 0; display: grid; place-items: center; }
+  #frame { position: relative; width: min(100vw, calc(100vh * 16 / 9)); max-height: 100vh; background: #000; overflow: hidden; }
+  body.portrait #frame { width: min(100vw, calc(100vh * 9 / 16)); }
+  #stage { display: block; width: 100%; height: 100%; }
+  #intro { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 60%, #1b0b08 0%, #000 70%); transition: opacity .6s ease, visibility .6s; z-index: 3; }
+  #intro.gone { opacity: 0; visibility: hidden; }
+  .card { text-align: center; display: grid; gap: 18px; justify-items: center; padding: 24px; }
+  .card svg { width: clamp(64px, 11vmin, 120px); height: auto; filter: drop-shadow(0 0 28px rgba(216, 38, 15, .55)); }
+  .card h1 { margin: 0; font-weight: 800; letter-spacing: .32em; font-size: clamp(12px, 1.6vmin, 15px); opacity: .9; }
+  .card p { margin: 0; opacity: .6; letter-spacing: .04em; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  #play { background: var(--red); border: 0; border-radius: 999px; padding: 14px 28px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 13px; box-shadow: 0 10px 40px rgba(216, 38, 15, .35); transition: transform .15s ease, opacity .2s; }
+  #play:hover { transform: translateY(-1px) scale(1.02); }
+  #play:disabled { opacity: .45; cursor: progress; }
+  #controls { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 18px 14px; display: flex; gap: 12px; align-items: center; background: linear-gradient(transparent, rgba(0, 0, 0, .55)); opacity: 0; transition: opacity .3s; z-index: 2; }
+  body.ui #controls, body.paused #controls, body.ended #controls { opacity: 1; }
+  #controls button { background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .18); border-radius: 999px; height: 34px; min-width: 34px; padding: 0 12px; font-size: 12px; letter-spacing: .06em; }
+  #scrub { flex: 1; height: 22px; display: grid; align-items: center; cursor: pointer; touch-action: none; }
+  #track { height: 3px; background: rgba(255, 255, 255, .22); border-radius: 3px; overflow: hidden; }
+  #bar { height: 100%; background: var(--red); transform-origin: 0 50%; transform: scaleX(0); }
+  #time { font-variant-numeric: tabular-nums; opacity: .75; font-size: 12px; min-width: 88px; text-align: right; }
+  #end { position: absolute; right: 18px; top: 18px; opacity: 0; visibility: hidden; transition: opacity .4s; z-index: 2; }
+  body.ended #end { opacity: 1; visibility: visible; }
+  #end button { background: rgba(0, 0, 0, .45); border: 1px solid rgba(255, 255, 255, .25); border-radius: 999px; padding: 10px 18px; letter-spacing: .08em; font-size: 12px; text-transform: uppercase; }
+  #hint { position: absolute; left: 18px; top: 16px; font-size: 11px; letter-spacing: .08em; opacity: 0; transition: opacity .3s; z-index: 2; }
+  body.ui #hint { opacity: .55; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="frame">
+    <canvas id="stage"></canvas>
+    <div id="intro">
+      <div class="card">
+        <svg viewBox="-1.05 -1.05 2.1 2.1" aria-hidden="true">
+          <defs><radialGradient id="lg" cx="0" cy="0.95" r="1.9" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#E8290F"/><stop offset=".45" stop-color="#C21E0B"/><stop offset="1" stop-color="#4A0702"/></radialGradient></defs>
+          <circle r="1" fill="url(#lg)"/><circle r=".985" fill="none" stroke="#E4260C" stroke-opacity=".6" stroke-width=".03"/>
+          <path id="mark" fill="#fff" fill-rule="evenodd"/>
+        </svg>
+        <h1>SHADES · OPEN MIC</h1>
+        <p>Sat 24 Oct 2026 · Boat Club Bistro, Roorkee</p>
+        <button id="play" disabled>▶&nbsp; Play with sound</button>
+        <p id="status">Loading…</p>
+      </div>
+    </div>
+    <div id="hint">SPACE play/pause · ←/→ seek · R restart · F fullscreen</div>
+    <div id="end"><button id="replay">↺ Replay</button></div>
+    <div id="controls">
+      <button id="pp" title="Play / pause (Space)">❚❚</button>
+      <button id="restart" title="Restart (R)">↺</button>
+      <div id="scrub"><div id="track"><div id="bar"></div></div></div>
+      <span id="time">0:00.0 / 0:33.2</span>
+      <button id="fs" title="Fullscreen (F)">⛶</button>
+    </div>
+  </div>
+</div>
+<script type="module">
+  import MARK from './src/scenes/markPath.js';
+  document.getElementById('mark').setAttribute('d', MARK);
+  const q = new URLSearchParams(location.search);
+  if (q.has('render')) {
+    // headless render mode: tools/render.mjs drives frames directly
+    const { Trailer } = await import('./src/main.js');
+    const W = +q.get('w') || 1920, H = +q.get('h') || 1080;
+    document.getElementById('intro').remove();
+    document.getElementById('controls').remove();
+    const frame = document.getElementById('frame');
+    frame.style.width = W + 'px'; frame.style.height = H + 'px';
+    const trailer = new Trailer(document.getElementById('stage'), { width: W, height: H, software: true });
+    window.__TRAILER__ = trailer;
+    await trailer.init();
+    window.__INIT_DONE__ = true;
+  } else {
+    const { boot } = await import('./src/player.js');
+    boot().catch((e) => { document.getElementById('status').textContent = 'Could not start: ' + e.message; console.error(e); });
+  }
+</script>
+</body>
+</html>
